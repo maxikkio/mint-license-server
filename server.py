@@ -22,15 +22,17 @@ ELEVATED_USERS = {
     }
 }
 
-# Baza danych klientów (tutaj zapisują się klucze ręcznie dodane / powiązane)
-CLIENTS_DB = {}
+# Przykładowi klienci (możesz ich dopisywać lub zarządzać)
+CLIENTS_DB = {
+    # "janek": {"password": "haslo", "key": "MINT-ABCD-1234-EFGH", "package": "PRO", "role": "Klient"}
+}
 
 PANEL_HTML = """
 <!DOCTYPE html>
 <html lang="pl" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Mint Server - Panel Logowania</title>
+    <title>Mint Server - Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
@@ -54,8 +56,8 @@ PANEL_HTML = """
     <div x-show="!isLoggedIn" class="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
-            <h1 class="text-lg font-bold text-white tracking-tight">Panel Administracyjny & Klienta</h1>
-            <p class="text-xs text-slate-400">Zaloguj się na swoje konto</p>
+            <h1 class="text-lg font-bold text-white tracking-tight">Logowanie do Systemu</h1>
+            <p class="text-xs text-slate-400">Wpisz swoje dane dostępu</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
@@ -79,12 +81,12 @@ PANEL_HTML = """
         </form>
 
         <div class="border-t border-slate-800 pt-4 text-center">
-            <p class="text-xs text-slate-400">Nie masz dostępu lub konta?</p>
+            <p class="text-xs text-slate-400">Nie masz konta lub klucza?</p>
             <p class="text-xs text-brand-400 mt-1 font-medium">Napisz wiadomość na: <a href="mailto:mbxryt24@zohomail.eu" class="underline">mbxryt24@zohomail.eu</a></p>
         </div>
     </div>
 
-    <!-- PANEL GŁÓWNY -->
+    <!-- PANEL GŁÓWNY (ROZDZIELENIE NA KLIENTA I ADMINA) -->
     <div x-show="isLoggedIn" class="max-w-4xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
         
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -92,7 +94,7 @@ PANEL_HTML = """
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
                 <div>
                     <h1 class="text-lg font-bold text-white flex items-center gap-2">
-                        <span>Panel Mint Downloader</span>
+                        <span x-text="userData.role === 'Klient' ? 'Panel Klienta' : 'Panel Administratora'"></span>
                         <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-0.5 rounded-full uppercase" x-text="userData.role"></span>
                     </h1>
                     <p class="text-xs text-slate-400">Zalogowany: <b class="text-slate-200" x-text="form.username"></b></p>
@@ -103,20 +105,20 @@ PANEL_HTML = """
             </button>
         </header>
 
-        <!-- SEKCJA KLIENTA -->
+        <!-- 1. PANEL KLIENTA (Widoczny TYLKO dla Klienta) -->
         <div x-show="userData.role === 'Klient'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Twój Klucz Licencyjny Pro</h2>
             <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <span class="font-mono text-brand-400 text-sm font-bold tracking-wider" x-text="userData.key"></span>
-                <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-lg">Aktywny</span>
+                <span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg">Aktywny</span>
             </div>
-            <p class="text-xs text-slate-400">Wprowadź powyższy klucz w aplikacji desktopowej.</p>
+            <p class="text-xs text-slate-400">Skopiuj powyższy klucz i wklej go do aplikacji desktopowej Mint Video Downloader, aby w pełni ją aktywować.</p>
         </div>
 
-        <!-- SEKCJA WYŻSZYCH RÓL (Admin, Właściciel, Marketing) -->
+        <!-- 2. PANEL ADMINA / ZARZĄDZANIA (Widoczny dla Właściciela, Admina i Marketingu) -->
         <div x-show="userData.role !== 'Klient'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between">
-                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie Użytkownikami i Zespołem</h2>
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie Użytkownikami i Licencjami</h2>
                 <button @click="loadUsers()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
             </div>
 
@@ -126,7 +128,7 @@ PANEL_HTML = """
                         <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
                             <th class="py-3 px-3">Użytkownik</th>
                             <th class="py-3 px-3">Rola</th>
-                            <th class="py-3 px-3">Klucz / Dane</th>
+                            <th class="py-3 px-3">Klucz / Dane dostępu</th>
                         </tr>
                     </thead>
                     <tbody class="text-xs divide-y divide-slate-800/40">
@@ -165,7 +167,9 @@ PANEL_HTML = """
                         if (data.status === 'valid') {
                             this.isLoggedIn = true;
                             this.userData = data;
-                            if (data.role !== 'Klient') this.loadUsers();
+                            if (data.role !== 'Klient') {
+                                this.loadUsers();
+                            }
                         } else {
                             this.message = data.error || 'Błąd logowania.';
                         }
@@ -214,7 +218,7 @@ def verify_license():
     password = data.get("password", "").strip()
     key = data.get("key", "").strip().upper()
 
-    # 1. Sprawdzenie ról wyższych
+    # 1. Sprawdzenie ról wyższych (Właściciel, Admin, Marketing)
     if username in ELEVATED_USERS:
         user = ELEVATED_USERS[username]
         if user["password"] == password:
@@ -224,7 +228,7 @@ def verify_license():
                 "role": user["role"]
             })
 
-    # 2. Sprawdzenie klientów
+    # 2. Sprawdzenie kont klientów
     if username in CLIENTS_DB:
         client = CLIENTS_DB[username]
         if client["password"] == password:
@@ -235,7 +239,7 @@ def verify_license():
                 "key": client["key"]
             })
 
-    # 3. Weryfikacja po kluczu
+    # 3. Weryfikacja po samym kluczu (dla aplikacji desktopowej)
     for c_name, c_data in CLIENTS_DB.items():
         if c_data["key"] == key:
             return jsonify({
@@ -264,6 +268,7 @@ def get_manageable_users():
     clients_list = [{"username": uname, "role": "Klient", "credential": cdata["key"]} for uname, cdata in CLIENTS_DB.items()]
     all_accounts = elevated_list + clients_list
 
+    # Restrykcje widoczności RBAC
     if current_username == "maxikk":
         return jsonify({"status": "success", "users": all_accounts})
     elif current_username in ["olafekk7", "marketing"]:
