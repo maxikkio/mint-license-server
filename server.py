@@ -1,70 +1,37 @@
+import uuid
 from flask import Flask, request, jsonify, render_template_string
-from datetime import datetime
-import json
-import os
-import random
-import string
 
 app = Flask(__name__)
 
-# Plik do trwałego przechowywania kluczy i licencji
-KEYS_DB_FILE = "keys_database.json"
-
-def load_keys():
-    if os.path.exists(KEYS_DB_FILE):
-        try:
-            with open(KEYS_DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_keys():
-    try:
-        with open(KEYS_DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(KEYS_DB, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Błąd zapisu bazy kluczy: {e}")
-
-# Baza danych kont zespołu administracyjnego
-USERS_DB = {
+# Baza danych ról administracyjnych i wyższych szczebli
+ELEVATED_USERS = {
     "maxikk": {
-        "username": "maxikk",
         "password": "21288371",
         "role": "Właściciel",
         "package": "WŁAŚCICIEL (OWNER)"
     },
     "olafekk7": {
-        "username": "olafekk7",
         "password": "Emo14578",
+        "role": "Admin",
+        "package": "ADMIN"
+    },
+    "marketing": {
+        "password": "market123",
         "role": "Marketing Team",
-        "package": "MARKETING TEAM"
+        "package": "MARKETING"
     }
 }
 
-# Ładowanie kluczy z pliku przy starcie serwera
-KEYS_DB = load_keys()
+# Dynamiczna baza zarejestrowanych klientów (w pamięci serwera)
+# Warto w przyszłości podpiąć pod bazę SQL, na Render po restarcie serwera dane klientów mogą się zresetować
+CLIENTS_DB = {}
 
-# Historia logowań do panelu administracyjnego (ostatnich 10)
-LOGIN_HISTORY = []
-
-def record_login(username, role):
-    entry = {
-        "username": username,
-        "role": role,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    LOGIN_HISTORY.insert(0, entry)
-    if len(LOGIN_HISTORY) > 10:
-        LOGIN_HISTORY.pop()
-
-# Panel Administracyjny w HTML + Tailwind + Alpine.js
 PANEL_HTML = """
 <!DOCTYPE html>
 <html lang="pl" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Zarządzania - Mint Server</title>
+    <title>Mint Server - Panel i Rejestracja</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
@@ -72,9 +39,7 @@ PANEL_HTML = """
             darkMode: 'class',
             theme: {
                 extend: {
-                    colors: {
-                        brand: { 500: '#10b981', 600: '#059669', 400: '#34d399' }
-                    }
+                    colors: { brand: { 500: '#10b981', 600: '#059669', 400: '#34d399' } }
                 }
             }
         }
@@ -84,49 +49,56 @@ PANEL_HTML = """
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
     </style>
 </head>
-<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white" x-data="panelApp()">
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white" x-data="app()">
 
-    <!-- EKRAN LOGOWANIA -->
+    <!-- EKRAN LOGOWANIA / REJESTRACJI -->
     <div x-show="!isLoggedIn" class="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
-            <h1 class="text-lg font-bold text-white tracking-tight">Panel Serwera Mint</h1>
-            <p class="text-xs text-slate-400">Zaloguj się na swoje konto administracyjne</p>
+            <h1 class="text-lg font-bold text-white tracking-tight" x-text="isRegistering ? 'Rejestracja Klienta' : 'Logowanie do Systemu'"></h1>
+            <p class="text-xs text-slate-400" x-text="isRegistering ? 'Utwórz konto, aby otrzymać swój klucz' : 'Zaloguj się na swoje konto lub jako Admin/Marketing'"></p>
         </div>
 
-        <form @submit.prevent="login()" class="flex flex-col gap-4">
+        <form @submit.prevent="isRegistering ? register() : login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
-                <input type="text" x-model="username" required
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login / Nazwa użytkownika</label>
+                <input type="text" x-model="form.username" required placeholder="np. jan_kowalski"
                     class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hasło</label>
-                <input type="password" x-model="password" required
+                <input type="password" x-model="form.password" required placeholder="••••••••"
                     class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
-            <div x-show="errorMsg" class="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3.5 py-2.5 rounded-xl font-medium text-center" x-text="errorMsg"></div>
+            <div x-show="message" class="text-xs px-3.5 py-2.5 rounded-xl font-medium text-center"
+                 :class="isSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'"
+                 x-text="message"></div>
 
-            <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer">
-                Zaloguj do Panelu
-            </button>
+            <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer"
+                    x-text="isRegistering ? 'Zarejestruj się i pobierz klucz' : 'Zaloguj się'"></button>
         </form>
+
+        <div class="text-center">
+            <button @click="isRegistering = !isRegistering; message = ''" class="text-xs text-brand-400 hover:underline">
+                <span x-text="isRegistering ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Zarejestruj się jako klient'"></span>
+            </button>
+        </div>
     </div>
 
-    <!-- GŁÓWNY PANEL Z ZAKŁADKAMI -->
-    <div x-show="isLoggedIn" class="max-w-6xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
+    <!-- PANEL KLIENTA / ADMINA -->
+    <div x-show="isLoggedIn" class="max-w-4xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
         
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
                 <div>
                     <h1 class="text-lg font-bold text-white flex items-center gap-2">
-                        <span>Zarządzanie Serwerem</span>
-                        <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-0.5 rounded-full uppercase" x-text="role"></span>
+                        <span>Panel Mint Downloader</span>
+                        <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-0.5 rounded-full uppercase" x-text="userData.role"></span>
                     </h1>
-                    <p class="text-xs text-slate-400">Zalogowany jako: <b class="text-slate-200" x-text="username"></b></p>
+                    <p class="text-xs text-slate-400">Zalogowany: <b class="text-slate-200" x-text="form.username"></b></p>
                 </div>
             </div>
             <button @click="logout()" class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all">
@@ -134,427 +106,123 @@ PANEL_HTML = """
             </button>
         </header>
 
-        <!-- Nawigacja zakładkami -->
-        <div class="flex gap-2 border-b border-slate-800/60 pb-2">
-            <button @click="activeTab = 'team'" :class="activeTab === 'team' ? 'bg-brand-500/10 border-brand-500/30 text-brand-400' : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:text-slate-200'" class="px-4 py-2 rounded-xl border text-xs font-semibold transition-all">
-                👥 Zespół i Audyt Logowań
-            </button>
-            <button @click="activeTab = 'licenses'" :class="activeTab === 'licenses' ? 'bg-brand-500/10 border-brand-500/30 text-brand-400' : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:text-slate-200'" class="px-4 py-2 rounded-xl border text-xs font-semibold transition-all">
-                🔑 Klucze i Licencje Użytkowników
-            </button>
+        <!-- SEKCJA DLA KLIENTA (Jego własny klucz) -->
+        <div x-show="userData.role === 'Klient'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Twój Klucz Licencyjny Pro</h2>
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <span class="font-mono text-brand-400 text-sm font-bold tracking-wider" x-text="userData.key"></span>
+                <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-lg">Aktywny</span>
+            </div>
+            <p class="text-xs text-slate-400">Skopiuj powyższy klucz i wklej go w aplikacji desktopowej Mint Video Downloader, aby odblokować pełną wersję.</p>
         </div>
 
-        <!-- ZAKŁADKA 1: ZESPÓŁ I OSTATNIE LOGOWANIA -->
-        <div x-show="activeTab === 'team'" class="flex flex-col gap-6">
-            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Struktura Zespołu</h2>
-                    <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                </div>
+        <!-- SEKCJA DLA ADMINA / MARKETINGU / WŁAŚCICIELA (Zarządzanie) -->
+        <div x-show="userData.role !== 'Klient'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider" x-text="userData.role === 'Marketing Team' ? 'Panel Analityczny / Zespół Marketingu' : 'Zarządzanie Kontami i Dostępami'"></h2>
+                <button @click="loadUsers()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
+            </div>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
-                                <th class="py-3 px-3">Użytkownik</th>
-                                <th class="py-3 px-3">Rola</th>
-                                <th class="py-3 px-3">Hasło</th>
-                                <th class="py-3 px-3 text-right">Dostęp</th>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
+                            <th class="py-3 px-3">Użytkownik / Klient</th>
+                            <th class="py-3 px-3">Rola / Typ</th>
+                            <th class="py-3 px-3">Klucz / Hasło</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-xs divide-y divide-slate-800/40">
+                        <template x-for="user in users" :key="user.username">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="py-3 px-3 font-semibold text-slate-200" x-text="user.username"></td>
+                                <td class="py-3 px-3 text-brand-400 font-medium" x-text="user.role"></td>
+                                <td class="py-3 px-3 font-mono text-slate-400" x-text="user.credential"></td>
                             </tr>
-                        </thead>
-                        <tbody class="text-xs divide-y divide-slate-800/40">
-                            <template x-for="user in users" :key="user.username">
-                                <tr class="hover:bg-slate-800/30 transition-colors">
-                                    <td class="py-3 px-3 font-semibold text-slate-200" x-text="user.username"></td>
-                                    <td class="py-3 px-3 text-brand-400 font-medium" x-text="user.role"></td>
-                                    <td class="py-3 px-3 font-mono text-slate-400" x-text="user.password"></td>
-                                    <td class="py-3 px-3 text-right">
-                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" x-text="user.access"></span>
-                                    </td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Historia logowań administracyjnych -->
-            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
-                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">📜 Ostatnie 10 logowań do panelu administratorów</h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
-                                <th class="py-2.5 px-3">Użytkownik</th>
-                                <th class="py-2.5 px-3">Rola</th>
-                                <th class="py-2.5 px-3 text-right">Data i czas</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-xs divide-y divide-slate-800/40">
-                            <template x-for="entry in history" :key="entry.timestamp + entry.username">
-                                <tr class="hover:bg-slate-800/30 transition-colors">
-                                    <td class="py-2.5 px-3 font-medium text-slate-200" x-text="entry.username"></td>
-                                    <td class="py-2.5 px-3 text-brand-400" x-text="entry.role"></td>
-                                    <td class="py-2.5 px-3 text-right font-mono text-slate-400" x-text="entry.timestamp"></td>
-                                </tr>
-                            </template>
-                            <template x-if="history.length === 0">
-                               <tr><td colspan="3" class="py-4 text-center text-slate-600 italic">Brak wpisów w historii.</td></tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </div>
+                        </template>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- ZAKŁADKA 2: KLUCZE I LICENCJE -->
-        <div x-show="activeTab === 'licenses'" class="flex flex-col gap-6" style="display: none;">
-            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
-                <div class="flex items-center justify-between flex-wrap gap-4">
-                    <div>
-                        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie Kluczami Licencyjnymi</h2>
-                        <p class="text-[11px] text-slate-500">Zrób backup bazy przed aktualizacją kodu, aby nie stracić kluczy!</p>
-                    </div>
-                    <!-- Przyciski Backup / Restore -->
-                    <div class="flex items-center gap-2">
-                        <button @click="exportBackup()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-semibold transition-all cursor-pointer">
-                            📥 Eksportuj Bazę (Backup)
-                        </button>
-                        <label class="px-3 py-1.5 bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/30 rounded-lg text-xs font-semibold transition-all cursor-pointer">
-                            📤 Importuj Bazę
-                            <input type="file" accept=".json" @change="importBackup($event)" class="hidden">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Formularz dodawania nowego klucza -->
-                <form @submit.prevent="addKey()" class="grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
-                    <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
-                        <input type="text" x-model="newKeyForm.username" required
-                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Hasło</label>
-                        <input type="text" x-model="newKeyForm.password" required
-                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <div class="flex items-center justify-between">
-                            <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz</label>
-                            <button type="button" @click="generateKeyFormat()" class="text-[10px] text-brand-400 hover:underline">Generuj</button>
-                        </div>
-                        <input type="text" x-model="newKeyForm.key" required
-                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalne)</label>
-                        <input type="text" x-model="newKeyForm.notes"
-                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                    </div>
-                    <div class="flex items-end">
-                        <button type="submit" class="w-full py-2 bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs rounded-lg shadow-md transition-all cursor-pointer">
-                            + Dodaj Klucz
-                        </button>
-                    </div>
-                </form>
-
-                <!-- Tabela kluczy -->
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
-                                <th class="py-3 px-3">Użytkownik</th>
-                                <th class="py-3 px-3">Hasło</th>
-                                <th class="py-3 px-3">Klucz Licencyjny</th>
-                                <th class="py-3 px-3">Notatki</th>
-                                <th class="py-3 px-3 text-center">Status</th>
-                                <th class="py-3 px-3 text-right">Zarządzanie</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-xs divide-y divide-slate-800/40">
-                            <template x-for="item in keysList" :key="item.key">
-                                <tr class="hover:bg-slate-800/30 transition-colors">
-                                    <td class="py-3 px-3 font-semibold text-slate-200" x-text="item.username"></td>
-                                    <td class="py-3 px-3 font-mono text-slate-400" x-text="item.password"></td>
-                                    <td class="py-3 px-3 font-mono text-brand-400 font-semibold" x-text="item.key"></td>
-                                    <td class="py-3 px-3 text-slate-300 italic" x-text="item.notes || 'Brak'"></td>
-                                    <td class="py-3 px-3 text-center">
-                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold"
-                                            :class="{
-                                                'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': item.status === 'Aktywny',
-                                                'bg-amber-500/10 text-amber-400 border border-amber-500/20': item.status === 'Wstrzymany',
-                                                'bg-rose-500/10 text-rose-400 border border-rose-500/20': item.status === 'Anulowany'
-                                            }" x-text="item.status"></span>
-                                    </td>
-                                    <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
-                                        <button @click="openEditModal(item)" class="px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded text-[10px] font-semibold transition-all cursor-pointer">Edytuj</button>
-                                        <button @click="changeKeyStatus(item.key, 'Aktywny')" x-show="item.status !== 'Aktywny'" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[10px] font-semibold transition-all cursor-pointer">Aktywuj</button>
-                                        <button @click="changeKeyStatus(item.key, 'Wstrzymany')" x-show="item.status === 'Aktywny'" class="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-[10px] font-semibold transition-all cursor-pointer">Wstrzymaj</button>
-                                        <button @click="changeKeyStatus(item.key, 'Anulowany')" x-show="item.status !== 'Anulowany'" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[10px] font-semibold transition-all cursor-pointer">Anuluj</button>
-                                        <button @click="deleteKey(item.key)" class="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[10px] font-semibold transition-all cursor-pointer">Usuń</button>
-                                    </td>
-                                </tr>
-                            </template>
-                            <template x-if="keysList.length === 0">
-                                <tr><td colspan="6" class="py-6 text-center text-slate-600 italic">Brak kluczy w bazie. Dodaj pierwszy powyżej.</td></tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- OKNO MODALNE DO EDYCJI KLUCZA -->
-    <div x-show="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" style="display: none;">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 class="text-sm font-bold text-white">Edycja Klucza i Licencji</h3>
-                <button @click="showEditModal = false" class="text-slate-400 hover:text-white text-sm font-bold">&times;</button>
-            </div>
-
-            <form @submit.prevent="updateKey()" class="flex flex-col gap-3">
-                <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
-                    <input type="text" x-model="editForm.username" required
-                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Hasło</label>
-                    <input type="text" x-model="editForm.password" required
-                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz Licencyjny</label>
-                    <input type="text" x-model="editForm.key" required
-                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalne)</label>
-                    <input type="text" x-model="editForm.notes"
-                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                </div>
-                <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Status</label>
-                    <select x-model="editForm.status" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                        <option value="Aktywny">Aktywny</option>
-                        <option value="Wstrzymany">Wstrzymany</option>
-                        <option value="Anulowany">Anulowany</option>
-                    </select>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 mt-3">
-                    <button type="button" @click="showEditModal = false" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-all">Anuluj</button>
-                    <button type="submit" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-all">Zapisz zmiany</button>
-                </div>
-            </form>
-        </div>
     </div>
 
     <script>
-        function panelApp() {
+        function app() {
             return {
                 isLoggedIn: false,
-                activeTab: 'team',
-                username: '',
-                password: '',
-                role: '',
-                errorMsg: '',
+                isRegistering: false,
+                form: { username: '', password: '' },
+                userData: {},
+                message: '',
+                isSuccess: false,
                 users: [],
-                history: [],
-                keysList: [],
-                showEditModal: false,
-                newKeyForm: {
-                    username: '',
-                    password: '',
-                    key: '',
-                    notes: ''
-                },
-                editForm: {
-                    oldKey: '',
-                    username: '',
-                    password: '',
-                    key: '',
-                    notes: '',
-                    status: 'Aktywny'
-                },
-                generateKeyFormat() {
-                    let part = () => Math.random().toString(36).substring(2, 6).toUpperCase();
-                    this.newKeyForm.key = `${part()}-${part()}-${part()}`;
-                },
+
                 async login() {
-                    this.errorMsg = '';
+                    this.message = '';
                     try {
                         let res = await fetch('/api/verify', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({username: this.username, password: this.password})
+                            body: JSON.stringify(this.form)
                         });
                         let data = await res.json();
                         if (data.status === 'valid') {
                             this.isLoggedIn = true;
-                            this.role = data.role;
-                            this.loadData();
+                            this.userData = data;
+                            if (data.role !== 'Klient') this.loadUsers();
                         } else {
-                            this.errorMsg = data.error || 'Nieprawidłowe dane logowania.';
+                            this.isSuccess = false;
+                            this.message = data.error || 'Błąd logowania.';
                         }
                     } catch(e) {
-                        this.errorMsg = 'Błąd połączenia z serwerem.';
+                        this.isSuccess = false;
+                        this.message = 'Błąd połączenia z serwerem.';
                     }
                 },
-                async loadData() {
+
+                async register() {
+                    this.message = '';
                     try {
-                        let res = await fetch('/api/data', {
+                        let res = await fetch('/api/register', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({username: this.username})
+                            body: JSON.stringify(this.form)
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.isSuccess = true;
+                            this.message = 'Konto utworzone! Możesz się teraz zalogować.';
+                            setTimeout(() => { this.isRegistering = false; this.message = ''; }, 2000);
+                        } else {
+                            this.isSuccess = false;
+                            this.message = data.error || 'Błąd rejestracji.';
+                        }
+                    } catch(e) {
+                        this.isSuccess = false;
+                        this.message = 'Błąd połączenia z serwerem.';
+                    }
+                },
+
+                async loadUsers() {
+                    try {
+                        let res = await fetch('/api/users', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({username: this.form.username})
                         });
                         let data = await res.json();
                         if (data.status === 'success') {
                             this.users = data.users;
-                            this.history = data.history || [];
-                            this.keysList = data.keys || [];
                         }
                     } catch(e) {}
                 },
-                async addKey() {
-                    try {
-                        let res = await fetch('/api/keys/add', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                admin_username: this.username,
-                                ...this.newKeyForm
-                            })
-                        });
-                        let data = await res.json();
-                        if (data.status === 'success') {
-                            this.keysList = data.keys;
-                            this.newKeyForm = { username: '', password: '', key: '', notes: '' };
-                        } else {
-                            alert(data.message || 'Nie udało się dodać klucza.');
-                        }
-                    } catch(e) {}
-                },
-                openEditModal(item) {
-                    this.editForm = {
-                        oldKey: item.key,
-                        username: item.username,
-                        password: item.password,
-                        key: item.key,
-                        notes: item.notes || '',
-                        status: item.status
-                    };
-                    this.showEditModal = true;
-                },
-                async updateKey() {
-                    try {
-                        let res = await fetch('/api/keys/edit', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                admin_username: this.username,
-                                ...this.editForm
-                            })
-                        });
-                        let data = await res.json();
-                        if (data.status === 'success') {
-                            this.keysList = data.keys;
-                            this.showEditModal = false;
-                        } else {
-                            alert(data.message || 'Nie udało się zaktualizować klucza.');
-                        }
-                    } catch(e) {}
-                },
-                async changeKeyStatus(keyStr, newStatus) {
-                    try {
-                        let res = await fetch('/api/keys/status', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                admin_username: this.username,
-                                key: keyStr,
-                                status: newStatus
-                            })
-                        });
-                        let data = await res.json();
-                        if (data.status === 'success') {
-                            this.keysList = data.keys;
-                        }
-                    } catch(e) {}
-                },
-                async deleteKey(keyStr) {
-                    if (!confirm('Czy na pewno chcesz bezpowrotnie usunąć ten klucz?')) return;
-                    try {
-                        let res = await fetch('/api/keys/delete', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                admin_username: this.username,
-                                key: keyStr
-                            })
-                        });
-                        let data = await res.json();
-                        if (data.status === 'success') {
-                            this.keysList = data.keys;
-                        }
-                    } catch(e) {}
-                },
-                async exportBackup() {
-                    try {
-                        let res = await fetch('/api/keys/export', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ admin_username: this.username })
-                        });
-                        let blob = await res.blob();
-                        let url = window.URL.createObjectURL(blob);
-                        let a = document.createElement('a');
-                        a.href = url;
-                        a.download = `keys_backup_${new Date().toISOString().slice(0,10)}.json`;
-                        a.click();
-                    } catch(e) {
-                        alert('Błąd podczas eksportu bazy.');
-                    }
-                },
-                async importBackup(event) {
-                    let file = event.target.files[0];
-                    if (!file) return;
-                    let reader = new FileReader();
-                    reader.onload = async (e) => {
-                        try {
-                            let jsonContent = JSON.parse(e.target.result);
-                            let res = await fetch('/api/keys/import', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({
-                                    admin_username: this.username,
-                                    imported_keys: jsonContent
-                                })
-                            });
-                            let data = await res.json();
-                            if (data.status === 'success') {
-                                this.keysList = data.keys;
-                                alert('Pomyślnie przywrócono bazę kluczy z backupu!');
-                            } else {
-                                alert(data.message || 'Błąd importu.');
-                            }
-                        } catch(err) {
-                            alert('Nieprawidłowy format pliku JSON.');
-                        }
-                    };
-                    reader.readAsText(file);
-                    event.target.value = '';
-                },
+
                 logout() {
                     this.isLoggedIn = false;
-                    this.username = '';
-                    this.password = '';
+                    this.form = { username: '', password: '' };
+                    this.userData = {};
                     this.users = [];
-                    this.history = [];
-                    this.keysList = [];
                 }
             }
         }
@@ -564,228 +232,109 @@ PANEL_HTML = """
 """
 
 @app.route('/')
-@app.route('/admin')
 def serve_panel():
     return render_template_string(PANEL_HTML)
 
 
+@app.route('/api/register', methods=['POST'])
+def register_client():
+    """Rejestracja nowego klienta i wygenerowanie mu unikalnego klucza"""
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if not username or not password:
+        return jsonify({"status": "error", "error": "Wypełnij wszystkie pola."}), 400
+
+    if username in ELEVATED_USERS or username in CLIENTS_DB:
+        return jsonify({"status": "error", "error": "Taki użytkownik już istnieje."}), 400
+
+    # Generowanie unikalnego klucza licencyjnego dla klienta
+    unique_key = f"MINT-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:8].upper()}"
+
+    CLIENTS_DB[username] = {
+        "password": password,
+        "key": unique_key,
+        "role": "Klient",
+        "package": "PRO"
+    }
+
+    return jsonify({"status": "success", "key": unique_key})
+
+
 @app.route('/api/verify', methods=['POST'])
 def verify_license():
+    """Weryfikacja danych logowania dla wyższych ról oraz klientów (używane przez apkę i panel)"""
     data = request.get_json() or {}
-    username = (data.get("username") or "").strip()
-    password = (data.get("password") or "").strip()
-    key = (data.get("key") or "").strip().upper()
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
 
-    if username in USERS_DB and not key:
-        user = USERS_DB[username]
+    # 1. Sprawdzenie ról wyższych (Właściciel, Admin, Marketing)
+    if username in ELEVATED_USERS:
+        user = ELEVATED_USERS[username]
         if user["password"] == password:
-            record_login(username, user["role"])
             return jsonify({
                 "status": "valid",
                 "package": user["package"],
                 "role": user["role"]
             })
-        else:
-            return jsonify({
-                "status": "invalid",
-                "error": "Nieprawidłowe hasło dla konta administracyjnego."
-            }), 200
 
-    if key in KEYS_DB:
-        ldata = KEYS_DB[key]
-        if ldata.get("status") == "Aktywny" and ldata.get("username") == username and ldata.get("password") == password:
+    # 2. Sprawdzenie zarejestrowanych klientów
+    if username in CLIENTS_DB:
+        client = CLIENTS_DB[username]
+        if client["password"] == password:
             return jsonify({
                 "status": "valid",
-                "package": "PRO",
-                "role": "Użytkownik"
+                "package": client["package"],
+                "role": client["role"],
+                "key": client["key"]
             })
-        else:
+
+    # 3. Sprawdzenie po samym kluczu (dla aplikacji desktopowej, jeśli klient wpisze klucz)
+    for c_name, c_data in CLIENTS_DB.items():
+        if c_data["key"] == key:
             return jsonify({
-                "status": "invalid",
-                "error": "Licencja jest wstrzymana, anulowana lub dane logowania są błędne."
-            }), 200
+                "status": "valid",
+                "package": c_data["package"],
+                "role": c_data["role"]
+            })
 
     return jsonify({
         "status": "invalid",
-        "error": "Nieprawidłowy klucz licencyjny, login lub hasło."
+        "error": "Nieprawidłowy login, hasło lub klucz."
     }), 200
 
 
-@app.route('/api/data', methods=['POST'])
-def get_dashboard_data():
+@app.route('/api/users', methods=['POST'])
+def get_manageable_users():
+    """Zwraca listę kont z uwzględnieniem uprawnień (RBAC)"""
     data = request.get_json() or {}
-    current_username = (data.get("username") or "").strip()
+    current_username = data.get("username", "").strip()
 
-    base_accounts = [
-        {"username": "maxikk", "role": "Właściciel", "password": "21288371", "access": "Pełny dostęp właścicielski"},
-        {"username": "olafekk7", "role": "Marketing Team", "password": "Emo14578", "access": "Zarządzanie kontami"}
+    # Lista bazowa wyższych rang
+    elevated_list = [
+        {"username": "maxikk", "role": "Właściciel", "credential": "21288371"},
+        {"username": "olafekk7", "role": "Admin", "credential": "Emo14578"},
+        {"username": "marketing", "role": "Marketing Team", "credential": "market123"}
     ]
 
-    keys_array = list(KEYS_DB.values())
+    # Dodanie klientów do widoku
+    clients_list = [{"username": uname, "role": "Klient", "credential": cdata["key"]} for uname, cdata in CLIENTS_DB.items()]
+    
+    all_accounts = elevated_list + clients_list
 
-    users_to_send = []
-    for acc in base_accounts:
-        user_copy = acc.copy()
-        if current_username != "maxikk" and user_copy["username"] != current_username:
-            user_copy["password"] = "********"
-        users_to_send.append(user_copy)
-
+    # Restrykcje dostępu (RBAC)
     if current_username == "maxikk":
-        history_to_send = LOGIN_HISTORY
-    else:
-        history_to_send = [h for h in LOGIN_HISTORY if h["username"] != "maxikk"]
-
-    return jsonify({
-        "status": "success",
-        "users": users_to_send,
-        "history": history_to_send,
-        "keys": keys_array
-    })
-
-
-@app.route('/api/keys/add', methods=['POST'])
-def add_new_key():
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
-
-    k_val = (data.get("key") or "").strip().upper()
-    u_val = (data.get("username") or "").strip()
-    p_val = (data.get("password") or "").strip()
-    n_val = (data.get("notes") or "").strip()
-
-    if not k_val or not u_val or not p_val:
-        return jsonify({"status": "error", "message": "Wypełnij wymagane pola klucza!"}), 400
-
-    if k_val in KEYS_DB:
-        return jsonify({"status": "error", "message": "Taki klucz już istnieje w bazie!"}), 400
-
-    KEYS_DB[k_val] = {
-        "key": k_val,
-        "username": u_val,
-        "password": p_val,
-        "notes": n_val,
-        "status": "Aktywny",
-        "package": "PRO",
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    save_keys()
-
-    return jsonify({
-        "status": "success",
-        "keys": list(KEYS_DB.values())
-    })
-
-
-@app.route('/api/keys/edit', methods=['POST'])
-def edit_key():
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
-
-    old_key = (data.get("old_key") or data.get("oldKey") or "").strip().upper()
-    new_key = (data.get("key") or "").strip().upper()
-    u_val = (data.get("username") or "").strip()
-    p_val = (data.get("password") or "").strip()
-    n_val = (data.get("notes") or "").strip()
-    status_val = (data.get("status") or "").strip()
-
-    if old_key not in KEYS_DB:
-        return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
-
-    if old_key != new_key:
-        if new_key in KEYS_DB:
-            return jsonify({"status": "error", "message": "Podany nowy klucz już istnieje w bazie!"}), 400
-        item_data = KEYS_DB.pop(old_key)
-        item_data["key"] = new_key
-        item_data["username"] = u_val
-        item_data["password"] = p_val
-        item_data["notes"] = n_val
-        if status_val in ["Aktywny", "Wstrzymany", "Anulowany"]:
-            item_data["status"] = status_val
-        KEYS_DB[new_key] = item_data
-    else:
-        KEYS_DB[old_key]["username"] = u_val
-        KEYS_DB[old_key]["password"] = p_val
-        KEYS_DB[old_key]["notes"] = n_val
-        if status_val in ["Aktywny", "Wstrzymany", "Anulowany"]:
-            KEYS_DB[old_key]["status"] = status_val
-
-    save_keys()
-    return jsonify({
-        "status": "success",
-        "keys": list(KEYS_DB.values())
-    })
-
-
-@app.route('/api/keys/status', methods=['POST'])
-def change_key_status():
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-    key = (data.get("key") or "").strip().upper()
-    new_status = (data.get("status") or "").strip()
-
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
-
-    if key in KEYS_DB and new_status in ["Aktywny", "Wstrzymany", "Anulowany"]:
-        KEYS_DB[key]["status"] = new_status
-        save_keys()
-        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
-
-    return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
-
-
-@app.route('/api/keys/delete', methods=['POST'])
-def delete_key():
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-    key = (data.get("key") or "").strip().upper()
-
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
-
-    if key in KEYS_DB:
-        del KEYS_DB[key]
-        save_keys()
-        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
-
-    return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
-
-
-@app.route('/api/keys/export', methods=['POST'])
-def export_keys():
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
+        # Właściciel widzi wszystko
+        return jsonify({"status": "success", "users": all_accounts})
     
-    return app.response_class(
-        response=json.dumps(KEYS_DB, ensure_ascii=False, indent=4),
-        status=200,
-        mimetype='application/json'
-    )
-
-
-@app.route('/api/keys/import', methods=['POST'])
-def import_keys():
-    global KEYS_DB
-    data = request.get_json() or {}
-    admin_username = (data.get("admin_username") or "").strip()
-    if admin_username not in USERS_DB:
-        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
-
-    imported = data.get("imported_keys")
-    if isinstance(imported, dict):
-        KEYS_DB = imported
-        save_keys()
-        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
+    elif current_username in ["olafekk7", "marketing"]:
+        # Admin oraz Marketing widzów siebie, siebie nawzajem oraz klientów, ale WŁAŚCICIEL JEST UKRYTY
+        filtered = [u for u in all_accounts if u["username"] != "maxikk"]
+        return jsonify({"status": "success", "users": filtered})
     
-    return jsonify({"status": "error", "message": "Nieprawidłowa struktura danych."}), 400
+    return jsonify({"status": "success", "users": []})
 
 
 if __name__ == '__main__':
