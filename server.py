@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify, render_template_string
 from datetime import datetime
+import random
+import string
 
 app = Flask(__name__)
 
-# Baza danych kont zespołu administracyjnego (wyłącznie do logowania w panelu /admin)
+# Baza danych kont zespołu administracyjnego
 USERS_DB = {
     "maxikk": {
         "username": "maxikk",
@@ -19,7 +21,7 @@ USERS_DB = {
     }
 }
 
-# Czysta baza kluczy licencyjnych dla klientów (wymaga dodania w panelu)
+# Baza kluczy licencyjnych
 KEYS_DB = {}
 
 # Historia logowań (zapamiętuje ostatnich 10)
@@ -194,26 +196,29 @@ PANEL_HTML = """
                     </div>
                 </div>
 
-                <!-- Formularz dodawania nowego klucza -->
+                <!-- Formularz dodawania nowego klucza (puste pola bez przykładowych tekstów) -->
                 <form @submit.prevent="addKey()" class="grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
-                        <input type="text" x-model="newKeyForm.username" required placeholder="np. jan_kowalski"
+                        <input type="text" x-model="newKeyForm.username" required placeholder=""
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Hasło</label>
-                        <input type="text" x-model="newKeyForm.password" required placeholder="hasło klienta"
+                        <input type="text" x-model="newKeyForm.password" required placeholder=""
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz licencyjny</label>
-                        <input type="text" x-model="newKeyForm.key" required placeholder="MINT-XXXX..."
+                        <div class="flex items-center justify-between">
+                            <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz</label>
+                            <button type="button" @click="generateKeyFormat()" class="text-[10px] text-brand-400 hover:underline">Generuj</button>
+                        </div>
+                        <input type="text" x-model="newKeyForm.key" required placeholder=""
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
                     </div>
                     <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatki</label>
-                        <input type="text" x-model="newKeyForm.notes" placeholder="np. klient VIP"
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatki (opcjonalne)</label>
+                        <input type="text" x-model="newKeyForm.notes" placeholder=""
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex items-end">
@@ -223,7 +228,7 @@ PANEL_HTML = """
                     </div>
                 </form>
 
-                <!-- Tabela kluczy -->
+                <!-- Tabela kluczy z opcjami statusu -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -232,7 +237,7 @@ PANEL_HTML = """
                                 <th class="py-3 px-3">Hasło</th>
                                 <th class="py-3 px-3">Klucz Licencyjny</th>
                                 <th class="py-3 px-3">Notatki</th>
-                                <th class="py-3 px-3 text-right">Status</th>
+                                <th class="py-3 px-3 text-right">Zarządzanie / Status</th>
                             </tr>
                         </thead>
                         <tbody class="text-xs divide-y divide-slate-800/40">
@@ -242,8 +247,17 @@ PANEL_HTML = """
                                     <td class="py-3 px-3 font-mono text-slate-400" x-text="item.password"></td>
                                     <td class="py-3 px-3 font-mono text-brand-400 font-semibold" x-text="item.key"></td>
                                     <td class="py-3 px-3 text-slate-300 italic" x-text="item.notes || 'Brak'"></td>
-                                    <td class="py-3 px-3 text-right">
-                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" x-text="item.status"></span>
+                                    <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold"
+                                            :class="{
+                                                'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': item.status === 'Aktywny',
+                                                'bg-amber-500/10 text-amber-400 border border-amber-500/20': item.status === 'Wstrzymany',
+                                                'bg-rose-500/10 text-rose-400 border border-rose-500/20': item.status === 'Anulowany'
+                                            }" x-text="item.status"></span>
+
+                                        <button @click="changeKeyStatus(item.key, 'Aktywny')" x-show="item.status !== 'Aktywny'" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[10px] font-semibold transition-all">Aktywuj</button>
+                                        <button @click="changeKeyStatus(item.key, 'Wstrzymany')" x-show="item.status === 'Aktywny'" class="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-[10px] font-semibold transition-all">Wstrzymaj</button>
+                                        <button @click="changeKeyStatus(item.key, 'Anulowany')" x-show="item.status !== 'Anulowany'" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[10px] font-semibold transition-all">Anuluj</button>
                                     </td>
                                 </tr>
                             </template>
@@ -275,6 +289,10 @@ PANEL_HTML = """
                     password: '',
                     key: '',
                     notes: ''
+                },
+                generateKeyFormat() {
+                    let part = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+                    this.newKeyForm.key = `${part()}-${part()}-${part()}`;
                 },
                 async login() {
                     this.errorMsg = '';
@@ -330,6 +348,23 @@ PANEL_HTML = """
                         }
                     } catch(e) {}
                 },
+                async changeKeyStatus(keyStr, newStatus) {
+                    try {
+                        let res = await fetch('/api/keys/status', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                admin_username: this.username,
+                                key: keyStr,
+                                status: newStatus
+                            })
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.keysList = data.keys;
+                        }
+                    } catch(e) {}
+                },
                 logout() {
                     this.isLoggedIn = false;
                     this.username = '';
@@ -375,7 +410,6 @@ def verify_license():
             }), 200
 
     # 2. Weryfikacja kluczy licencyjnych (dla aplikacji klienckiej)
-    # Klucz MUSI istnieć w bazie KEYS_DB, być aktywny oraz pasować do podanego loginu i hasła.
     if key in KEYS_DB:
         ldata = KEYS_DB[key]
         if ldata["status"] == "Aktywny" and ldata["username"] == username and ldata["password"] == password:
@@ -388,10 +422,9 @@ def verify_license():
         else:
             return jsonify({
                 "status": "invalid",
-                "error": "Nieprawidłowy login, hasło lub klucz dla tego konta."
+                "error": "Licencja jest wstrzymana, anulowana lub dane logowania są błędne."
             }), 200
 
-    # Jeśli klucz nie istnieje lub dane są nieprawidłowe
     return jsonify({
         "status": "invalid",
         "error": "Nieprawidłowy klucz licencyjny, login lub hasło."
@@ -410,7 +443,6 @@ def get_dashboard_data():
 
     keys_array = list(KEYS_DB.values())
 
-    # Bezpieczeństwo haseł: Każdy widzi siebie, ale TYLKO Właściciel widzi hasła innych
     users_to_send = []
     for acc in base_accounts:
         user_copy = acc.copy()
@@ -418,7 +450,6 @@ def get_dashboard_data():
             user_copy["password"] = "********"
         users_to_send.append(user_copy)
 
-    # Filtracja historii (Właściciel widzi wszystko, inni widzą bez Właściciela)
     if current_username == "maxikk":
         history_to_send = LOGIN_HISTORY
     else:
@@ -462,6 +493,23 @@ def add_new_key():
         "status": "success",
         "keys": list(KEYS_DB.values())
     })
+
+
+@app.route('/api/keys/status', methods=['POST'])
+def change_key_status():
+    data = request.get_json() or {}
+    admin_username = data.get("admin_username", "").strip()
+    key = data.get("key", "").strip().upper()
+    new_status = data.get("status", "").strip()
+
+    if admin_username not in USERS_DB:
+        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
+
+    if key in KEYS_DB and new_status in ["Aktywny", "Wstrzymany", "Anulowany"]:
+        KEYS_DB[key]["status"] = new_status
+        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
+
+    return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
 
 
 if __name__ == '__main__':
