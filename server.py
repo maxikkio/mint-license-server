@@ -1,11 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string
 from datetime import datetime
-import random
-import string
 
 app = Flask(__name__)
 
-# Baza danych kont zespołu administracyjnego
+# Baza danych kont zespołu administracyjnego (wyłącznie do logowania w panelu /admin)
 USERS_DB = {
     "maxikk": {
         "username": "maxikk",
@@ -21,7 +19,7 @@ USERS_DB = {
     }
 }
 
-# Czysta baza kluczy licencyjnych (pusta, gotowa do dodawania)
+# Czysta baza kluczy licencyjnych dla klientów (wymaga dodania w panelu)
 KEYS_DB = {}
 
 # Historia logowań (zapamiętuje ostatnich 10)
@@ -70,7 +68,7 @@ PANEL_HTML = """
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
             <h1 class="text-lg font-bold text-white tracking-tight">Panel Serwera Mint</h1>
-            <p class="text-xs text-slate-400">Zaloguj się na swoje konto</p>
+            <p class="text-xs text-slate-400">Zaloguj się na swoje konto administracyjne</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
@@ -360,8 +358,8 @@ def verify_license():
     password = data.get("password", "").strip()
     key = data.get("key", "").strip().upper()
 
-    # 1. Weryfikacja kont administracyjnych/zespołu
-    if username in USERS_DB:
+    # 1. Logowanie kont administracyjnych w panelu /admin (bez klucza)
+    if username in USERS_DB and not key:
         user = USERS_DB[username]
         if user["password"] == password:
             record_login(username, user["role"])
@@ -373,23 +371,30 @@ def verify_license():
         else:
             return jsonify({
                 "status": "invalid",
-                "error": "Nieprawidłowe hasło dla tego konta."
+                "error": "Nieprawidłowe hasło dla konta administracyjnego."
             }), 200
 
-    # 2. Weryfikacja kluczy licencyjnych klienta (sprawdza klucz, login i hasło)
-    for k, ldata in KEYS_DB.items():
-        if ldata["key"] == key and ldata["status"] == "Aktywny":
-            if ldata["username"] == username and ldata["password"] == password:
-                record_login(f"Klient: {username}", "Użytkownik")
-                return jsonify({
-                    "status": "valid",
-                    "package": "PRO",
-                    "role": "Użytkownik"
-                })
+    # 2. Weryfikacja kluczy licencyjnych (dla aplikacji klienckiej)
+    # Klucz MUSI istnieć w bazie KEYS_DB, być aktywny oraz pasować do podanego loginu i hasła.
+    if key in KEYS_DB:
+        ldata = KEYS_DB[key]
+        if ldata["status"] == "Aktywny" and ldata["username"] == username and ldata["password"] == password:
+            record_login(f"Klient: {username}", "Użytkownik")
+            return jsonify({
+                "status": "valid",
+                "package": "PRO",
+                "role": "Użytkownik"
+            })
+        else:
+            return jsonify({
+                "status": "invalid",
+                "error": "Nieprawidłowy login, hasło lub klucz dla tego konta."
+            }), 200
 
+    # Jeśli klucz nie istnieje lub dane są nieprawidłowe
     return jsonify({
         "status": "invalid",
-        "error": "Nieprawidłowy login, hasło lub klucz licencyjny."
+        "error": "Nieprawidłowy klucz licencyjny, login lub hasło."
     }), 200
 
 
