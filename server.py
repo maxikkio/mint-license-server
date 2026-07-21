@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Baza danych użytkowników i uprawnień na serwerze
+# Baza danych kont administracyjnych/zespołu
 USERS_DB = {
     "maxikk": {
         "username": "maxikk",
@@ -13,17 +14,31 @@ USERS_DB = {
     "olafekk7": {
         "username": "olafekk7",
         "password": "Emo14578",
-        "role": "Admin",
-        "package": "ADMIN"
+        "role": "Marketing Team",
+        "package": "MARKETING TEAM"
     }
 }
 
+# Pamięć podręczna historii logowań (w pamięci serwera)
+LOGIN_HISTORY = []
+
+def record_login(username, role):
+    entry = {
+        "username": username,
+        "role": role,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    LOGIN_HISTORY.insert(0, entry)
+    if len(LOGIN_HISTORY) > 50:
+        LOGIN_HISTORY.pop()
+
+# Wbudowany Panel Administracyjny w przeglądarce (HTML + Tailwind + Alpine.js)
 PANEL_HTML = """
 <!DOCTYPE html>
 <html lang="pl" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Zarządzania Licencjami - Mint Server</title>
+    <title>Panel Zarządzania - Mint Server</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
@@ -49,8 +64,8 @@ PANEL_HTML = """
     <div x-show="!isLoggedIn" class="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
-            <h1 class="text-lg font-bold text-white tracking-tight">Panel Administracyjny Serwera</h1>
-            <p class="text-xs text-slate-400">Zaloguj się na swoje konto administracyjne</p>
+            <h1 class="text-lg font-bold text-white tracking-tight">Panel Serwera Mint</h1>
+            <p class="text-xs text-slate-400">Zaloguj się na swoje konto</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
@@ -74,7 +89,7 @@ PANEL_HTML = """
         </form>
     </div>
 
-    <!-- GŁÓWNY PANEL ZARZĄDZANIA KONTAMI -->
+    <!-- GŁÓWNY PANEL ZARZĄDZANIA -->
     <div x-show="isLoggedIn" class="max-w-4xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
         
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -82,7 +97,7 @@ PANEL_HTML = """
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
                 <div>
                     <h1 class="text-lg font-bold text-white flex items-center gap-2">
-                        <span>Zarządzanie Dostępami</span>
+                        <span>Zarządzanie i Audyt</span>
                         <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-0.5 rounded-full uppercase" x-text="role"></span>
                     </h1>
                     <p class="text-xs text-slate-400">Zalogowany jako: <b class="text-slate-200" x-text="username"></b></p>
@@ -93,10 +108,11 @@ PANEL_HTML = """
             </button>
         </header>
 
+        <!-- Sekcja kont -->
         <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between">
-                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lista użytkowników i poziomów uprawnień</h2>
-                <button @click="loadUsers()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież listę</button>
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zespoły i Uprawnienia</h2>
+                <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
             </div>
 
             <div class="overflow-x-auto">
@@ -105,8 +121,8 @@ PANEL_HTML = """
                         <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
                             <th class="py-3 px-3">Użytkownik</th>
                             <th class="py-3 px-3">Rola</th>
-                            <th class="py-3 px-3">Hasło / Klucz</th>
-                            <th class="py-3 px-3 text-right">Status / Uprawnienia</th>
+                            <th class="py-3 px-3">Hasło</th>
+                            <th class="py-3 px-3 text-right">Dostęp</th>
                         </tr>
                     </thead>
                     <tbody class="text-xs divide-y divide-slate-800/40">
@@ -123,10 +139,33 @@ PANEL_HTML = """
                     </tbody>
                 </table>
             </div>
-            
-            <div class="mt-2 p-3.5 bg-slate-950/60 border border-slate-800/80 rounded-xl text-xs text-slate-400 flex items-center gap-2">
-                <span>🔒</span>
-                <span><b>Bezpieczeństwo RBAC:</b> Poziom dostępu ogranicza wgląd do konta Właściciela dla niższych ról.</span>
+        </div>
+
+        <!-- Sekcja historii logowań (Widoczna dla Właściciela) -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">📜 Historia logowań do panelu</h2>
+            <div class="overflow-x-auto max-h-48">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
+                            <th class="py-2.5 px-3">Użytkownik</th>
+                            <th class="py-2.5 px-3">Rola</th>
+                            <th class="py-2.5 px-3 text-right">Data i czas</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-xs divide-y divide-slate-800/40">
+                        <template x-for="entry in history" :key="entry.timestamp + entry.username">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="py-2.5 px-3 font-medium text-slate-200" x-text="entry.username"></td>
+                                <td class="py-2.5 px-3 text-brand-400" x-text="entry.role"></td>
+                                <td class="py-2.5 px-3 text-right font-mono text-slate-400" x-text="entry.timestamp"></td>
+                            </tr>
+                        </template>
+                        <template x-if="history.length === 0">
+                            <tr><td colspan="3" class="py-4 text-center text-slate-600 italic">Brak wpisów w historii.</td></tr>
+                        </template>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -141,6 +180,7 @@ PANEL_HTML = """
                 role: '',
                 errorMsg: '',
                 users: [],
+                history: [],
                 async login() {
                     this.errorMsg = '';
                     try {
@@ -153,7 +193,7 @@ PANEL_HTML = """
                         if (data.status === 'valid') {
                             this.isLoggedIn = true;
                             this.role = data.role;
-                            this.loadUsers();
+                            this.loadData();
                         } else {
                             this.errorMsg = data.error || 'Nieprawidłowe dane logowania.';
                         }
@@ -161,7 +201,7 @@ PANEL_HTML = """
                         this.errorMsg = 'Błąd połączenia z serwerem.';
                     }
                 },
-                async loadUsers() {
+                async loadData() {
                     try {
                         let res = await fetch('/api/users', {
                             method: 'POST',
@@ -171,6 +211,7 @@ PANEL_HTML = """
                         let data = await res.json();
                         if (data.status === 'success') {
                             this.users = data.users;
+                            this.history = data.history || [];
                         }
                     } catch(e) {}
                 },
@@ -179,6 +220,7 @@ PANEL_HTML = """
                     this.username = '';
                     this.password = '';
                     this.users = [];
+                    this.history = [];
                 }
             }
         }
@@ -198,10 +240,13 @@ def verify_license():
     data = request.get_json() or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
 
+    # 1. Sprawdzanie kont specjalnych (Właściciel / Marketing Team)
     if username in USERS_DB:
         user = USERS_DB[username]
         if user["password"] == password:
+            record_login(username, user["role"])
             return jsonify({
                 "status": "valid",
                 "package": user["package"],
@@ -213,9 +258,18 @@ def verify_license():
                 "error": "Nieprawidłowe hasło dla tego konta."
             }), 200
 
+    # 2. System kluczy i licencji (dla zwykłych użytkowników)
+    if key and key.startswith("MINT-"):
+        record_login(username if username else f"Klucz: {key[:8]}...", "Użytkownik")
+        return jsonify({
+            "status": "valid",
+            "package": "PRO",
+            "role": "Użytkownik"
+        })
+
     return jsonify({
         "status": "invalid",
-        "error": "Nie znaleziono takiego użytkownika."
+        "error": "Nieprawidłowy login, hasło lub klucz licencyjny."
     }), 200
 
 
@@ -226,16 +280,28 @@ def get_manageable_users():
 
     all_accounts = [
         {"username": "maxikk", "role": "Właściciel", "password": "21288371", "access": "Pełny dostęp właścicielski"},
-        {"username": "olafekk7", "role": "Admin", "password": "Emo14578", "access": "Zarządzanie bez wglądu w Właściciela"}
+        {"username": "olafekk7", "role": "Marketing Team", "password": "Emo14578", "access": "Zarządzanie bez wglądu w Właściciela"}
     ]
 
+    # Reguły RBAC oraz widoczności historii logowań
     if current_username == "maxikk":
-        return jsonify({"status": "success", "users": all_accounts})
+        # Właściciel widzi pełną listę kont oraz pełną historię logowań
+        return jsonify({
+            "status": "success", 
+            "users": all_accounts, 
+            "history": LOGIN_HISTORY
+        })
     elif current_username == "olafekk7":
+        # Marketing Team widzi siebie, ale konto Właściciela jest ukryte, a historia logowań również odfiltrowana
         filtered_accounts = [u for u in all_accounts if u["username"] != "maxikk"]
-        return jsonify({"status": "success", "users": filtered_accounts})
+        filtered_history = [h for h in LOGIN_HISTORY if h["username"] != "maxikk"]
+        return jsonify({
+            "status": "success", 
+            "users": filtered_accounts, 
+            "history": filtered_history
+        })
     else:
-        return jsonify({"status": "success", "users": []})
+        return jsonify({"status": "success", "users": [], "history": []})
 
 
 if __name__ == '__main__':
