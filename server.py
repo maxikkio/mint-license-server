@@ -238,7 +238,7 @@ PANEL_HTML = """
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
                     </div>
                     <div class="flex flex-col gap-1">
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalna)</label>
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalne)</label>
                         <input type="text" x-model="newKeyForm.notes"
                             class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
@@ -322,7 +322,7 @@ PANEL_HTML = """
                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
                 </div>
                 <div class="flex flex-col gap-1">
-                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka</label>
+                    <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalne)</label>
                     <input type="text" x-model="editForm.notes"
                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
@@ -516,9 +516,9 @@ def serve_panel():
 @app.route('/api/verify', methods=['POST'])
 def verify_license():
     data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    key = data.get("key", "").strip().upper()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    key = (data.get("key") or "").strip().upper()
 
     # 1. Logowanie kont administracyjnych w panelu /admin
     if username in USERS_DB and not key:
@@ -539,7 +539,7 @@ def verify_license():
     # 2. Weryfikacja kluczy licencyjnych dla klientów
     if key in KEYS_DB:
         ldata = KEYS_DB[key]
-        if ldata["status"] == "Aktywny" and ldata["username"] == username and ldata["password"] == password:
+        if ldata.get("status") == "Aktywny" and ldata.get("username") == username and ldata.get("password") == password:
             return jsonify({
                 "status": "valid",
                 "package": "PRO",
@@ -560,7 +560,7 @@ def verify_license():
 @app.route('/api/data', methods=['POST'])
 def get_dashboard_data():
     data = request.get_json() or {}
-    current_username = data.get("username", "").strip()
+    current_username = (data.get("username") or "").strip()
 
     base_accounts = [
         {"username": "maxikk", "role": "Właściciel", "password": "21288371", "access": "Pełny dostęp właścicielski"},
@@ -592,15 +592,15 @@ def get_dashboard_data():
 @app.route('/api/keys/add', methods=['POST'])
 def add_new_key():
     data = request.get_json() or {}
-    admin_username = data.get("admin_username", "").strip()
+    admin_username = (data.get("admin_username") or "").strip()
 
     if admin_username not in USERS_DB:
         return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
 
-    k_val = data.get("key", "").strip().upper()
-    u_val = data.get("username", "").strip()
-    p_val = data.get("password", "").strip()
-    n_val = data.get("notes", "").strip()
+    k_val = (data.get("key") or "").strip().upper()
+    u_val = (data.get("username") or "").strip()
+    p_val = (data.get("password") or "").strip()
+    n_val = (data.get("notes") or "").strip()
 
     if not k_val or not u_val or not p_val:
         return jsonify({"status": "error", "message": "Wypełnij wymagane pola klucza!"}), 400
@@ -628,22 +628,21 @@ def add_new_key():
 @app.route('/api/keys/edit', methods=['POST'])
 def edit_key():
     data = request.get_json() or {}
-    admin_username = data.get("admin_username", "").strip()
+    admin_username = (data.get("admin_username") or "").strip()
 
     if admin_username not in USERS_DB:
         return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
 
-    old_key = data.get("old_key", "").strip().upper()
-    new_key = data.get("key", "").strip().upper()
-    u_val = data.get("username", "").strip()
-    p_val = data.get("password", "").strip()
-    n_val = data.get("notes", "").strip()
-    status_val = data.get("status", "").strip()
+    old_key = (data.get("old_key") or data.get("oldKey") or "").strip().upper()
+    new_key = (data.get("key") or "").strip().upper()
+    u_val = (data.get("username") or "").strip()
+    p_val = (data.get("password") or "").strip()
+    n_val = (data.get("notes") or "").strip()
+    status_val = (data.get("status") or "").strip()
 
     if old_key not in KEYS_DB:
         return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
 
-    # Jeśli zmieniono sam ciąg klucza na inny
     if old_key != new_key:
         if new_key in KEYS_DB:
             return jsonify({"status": "error", "message": "Podany nowy klucz już istnieje w bazie!"}), 400
@@ -672,9 +671,9 @@ def edit_key():
 @app.route('/api/keys/status', methods=['POST'])
 def change_key_status():
     data = request.get_json() or {}
-    admin_username = data.get("admin_username", "").strip()
-    key = data.get("key", "").strip().upper()
-    new_status = data.get("status", "").strip()
+    admin_username = (data.get("admin_username") or "").strip()
+    key = (data.get("key") or "").strip().upper()
+    new_status = (data.get("status") or "").strip()
 
     if admin_username not in USERS_DB:
         return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
@@ -690,8 +689,8 @@ def change_key_status():
 @app.route('/api/keys/delete', methods=['POST'])
 def delete_key():
     data = request.get_json() or {}
-    admin_username = data.get("admin_username", "").strip()
-    key = data.get("key", "").strip().upper()
+    admin_username = (data.get("admin_username") or "").strip()
+    key = (data.get("key") or "").strip().upper()
 
     if admin_username not in USERS_DB:
         return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
