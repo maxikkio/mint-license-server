@@ -1,209 +1,251 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Form
-from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
-import sqlite3
+from flask import Flask, request, jsonify, render_template_string
 
-app = FastAPI()
-security = HTTPBasic()
+app = Flask(__name__)
 
-# Twoje dane logowania do panelu administratora
-ADMIN_USER = "maxikk"
-ADMIN_PASS = "21288371"
+# Baza danych użytkowników i uprawnień na serwerze
+USERS_DB = {
+    "maxikk": {
+        "username": "maxikk",
+        "password": "21288371",
+        "role": "Właściciel",
+        "package": "WŁAŚCICIEL (OWNER)"
+    },
+    "olafekk7": {
+        "username": "olafekk7",
+        "password": "Emo14578",
+        "role": "Admin",
+        "package": "ADMIN"
+    }
+}
 
-def init_db():
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS licenses (
-            key TEXT PRIMARY KEY,
-            package TEXT,
-            status TEXT DEFAULT 'active',
-            username TEXT,
-            password TEXT,
-            notes TEXT
-        )
-    """)
-    # Automatyczne migracje kolumn dla istniejącej bazy
-    for col in [("status", "TEXT DEFAULT 'active'"), ("username", "TEXT"), ("password", "TEXT"), ("notes", "TEXT")]:
-        try:
-            cursor.execute(f"ALTER TABLE licenses ADD COLUMN {col[0]} {col[1]}")
-        except:
-            pass
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    if credentials.username != ADMIN_USER or credentials.password != ADMIN_PASS:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Błędne dane logowania",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-# Model żądania weryfikacji z aplikacji klienta
-class VerifyRequest(BaseModel):
-    key: str
-    username: str
-    password: str
-
-@app.post("/api/verify")
-def verify_key(data: VerifyRequest):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT package, status, username, password FROM licenses WHERE key = ?", (data.key.strip(),))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        pkg, status_val, db_user, db_pass = row
-        # Sprawdzamy czy klucz jest aktywny oraz czy zgadza się użytkownik i hasło
-        if status_val == 'active' and db_user == data.username.strip() and db_pass == data.password.strip():
-            return {"status": "valid", "package": pkg}
-            
-    return {"status": "invalid"}
-
-# Panel Administratora
-@app.get("/admin", response_class=HTMLResponse)
-def admin_panel(admin: str = Depends(verify_admin)):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT key, package, status, username, password, notes FROM licenses")
-    rows = cursor.fetchall()
-    conn.close()
-
-    html = """
-    <!DOCTYPE html>
-    <html lang="pl" class="dark">
-    <head>
-        <meta charset="UTF-8">
-        <title>Panel Licencji - Mint Pro</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script>
-            function generateKey() {
-                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                const seg = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-                document.getElementById('keyInput').value = `MINT-${seg()}-${seg()}-${seg()}`;
+# Wbudowany Panel Administracyjny w przeglądarce (HTML + Tailwind + Alpine.js)
+PANEL_HTML = """
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Panel Zarządzania Licencjami - Mint Server</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 500: '#10b981', 600: '#059669', 400: '#34d399' }
+                    }
+                }
             }
-        </script>
-    </head>
-    <body class="bg-[#090d16] text-slate-100 min-h-screen p-8 font-sans">
-        <div class="max-w-6xl mx-auto flex flex-col gap-6">
-            <header class="flex justify-between items-center border-b border-slate-800 pb-4">
-                <h1 class="text-xl font-bold text-white flex items-center gap-2">🔑 Panel Administratora Licencji</h1>
-                <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full">Online</span>
-            </header>
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white" x-data="panelApp()">
 
-            <!-- Formularz dodawania -->
-            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Dodaj nowy klucz i przypisz użytkownika</h2>
-                <form action="/admin/add" method="post" class="flex flex-col gap-4">
-                    <div class="flex gap-3">
-                        <div class="flex-1">
-                            <input type="text" id="keyInput" name="key" placeholder="Kliknij losuj lub wpisz klucz..." required 
-                                   class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono text-emerald-300 focus:outline-none focus:border-emerald-500">
-                        </div>
-                        <button type="button" onclick="generateKey()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20">🎲 Losuj klucz</button>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <input type="text" name="username" placeholder="Nazwa użytkownika (login klienta)" required
-                               class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
-                        <input type="text" name="password" placeholder="Hasło użytkownika klienta" required
-                               class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
-                        <input type="text" name="notes" placeholder="Notatki (np. Allegro / Licencja roczna)" 
-                               class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
-                    </div>
-                    <div class="flex justify-between items-center pt-2">
-                        <input type="hidden" name="package" value="PRO">
-                        <span class="text-xs text-slate-500">Pakiet: <b class="text-slate-300">PRO</b> | Status: <b class="text-emerald-400">Aktywny</b></span>
-                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/20">💾 Zapisz w bazie</button>
-                    </div>
-                </form>
+    <!-- EKRAN LOGOWANIA DO PANELU SERWERA -->
+    <div x-show="!isLoggedIn" class="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
+        <div class="text-center flex flex-col items-center gap-2">
+            <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
+            <h1 class="text-lg font-bold text-white tracking-tight">Panel Administracyjny Serwera</h1>
+            <p class="text-xs text-slate-400">Zaloguj się jako Właściciel lub Administrator</p>
+        </div>
+
+        <form @submit.prevent="login()" class="flex flex-col gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
+                <input type="text" x-model="username" required placeholder="np. maxikk"
+                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
-            <!-- Tabela kluczy -->
-            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Zarządzanie licencjami i dostępami</h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-xs text-slate-500 font-semibold">
-                                <th class="py-3 px-2">Klucz licencyjny</th>
-                                <th class="py-3 px-2">Dane użytkownika</th>
-                                <th class="py-3 px-2">Notatki</th>
-                                <th class="py-3 px-2 text-center">Status</th>
-                                <th class="py-3 px-2 text-right">Akcje</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-xs divide-y divide-slate-800/40">
-    """
-    for r in rows:
-        key, pkg, status_val, user, pwd, notes = r[0], r[1], r[2], r[3] or "-", r[4] or "-", r[5] or ""
-        if status_val == 'active':
-            status_badge = '<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">Aktywny</span>'
-            toggle_btn = f'<a href="/admin/status?key={key}&status=paused" class="text-amber-400 hover:text-amber-300 font-semibold px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">Wstrzymaj</a>'
-        else:
-            status_badge = '<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">Wstrzymany</span>'
-            toggle_btn = f'<a href="/admin/status?key={key}&status=active" class="text-emerald-400 hover:text-emerald-300 font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">Wznów</a>'
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hasło</label>
+                <input type="password" x-model="password" required placeholder="••••••••"
+                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
+            </div>
 
-        html += f"""
-                        <tr class="hover:bg-slate-800/30">
-                            <td class="py-3 px-2 font-mono text-emerald-300 font-bold">{key}</td>
-                            <td class="py-3 px-2">
-                                <div class="text-slate-200">👤 <b>{user}</b></div>
-                                <div class="text-slate-400 font-mono text-[11px]">🔑 {pwd}</div>
-                            </td>
-                            <td class="py-3 px-2 text-slate-300 max-w-xs truncate">{notes}</td>
-                            <td class="py-3 px-2 text-center">{status_badge}</td>
-                            <td class="py-3 px-2 text-right space-x-2">
-                                {toggle_btn}
-                                <a href="/admin/delete?key={key}" class="text-rose-400 hover:text-rose-300 font-semibold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20">Usuń</a>
-                            </td>
-                        </tr>
-        """
-    if not rows:
-        html += '<tr><td colspan="5" class="py-8 text-center text-slate-600 italic">Brak kluczy w bazie.</td></tr>'
+            <div x-show="errorMsg" class="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3.5 py-2.5 rounded-xl font-medium text-center" x-text="errorMsg"></div>
 
-    html += """
-                        </tbody>
-                    </table>
+            <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer">
+                Zaloguj do Panelu
+            </button>
+        </form>
+    </div>
+
+    <!-- GŁÓWNY PANEL ZARZĄDZANIA KONTAMI -->
+    <div x-show="isLoggedIn" class="max-w-4xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
+        
+        <header class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
+                <div>
+                    <h1 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span>Zarządzanie Dostępami</span>
+                        <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-0.5 rounded-full uppercase" x-text="role"></span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Zalogowany jako: <b class="text-slate-200" x-text="username"></b></p>
                 </div>
             </div>
+            <button @click="logout()" class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all">
+                Wyloguj się
+            </button>
+        </header>
+
+        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lista użytkowników i poziomów uprawnień</h2>
+                <button @click="loadUsers()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież listę</button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
+                            <th class="py-3 px-3">Użytkownik</th>
+                            <th class="py-3 px-3">Rola</th>
+                            <th class="py-3 px-3">Hasło / Klucz</th>
+                            <th class="py-3 px-3 text-right">Status / Uprawnienia</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-xs divide-y divide-slate-800/40">
+                        <template x-for="user in users" :key="user.username">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="py-3 px-3 font-semibold text-slate-200" x-text="user.username"></td>
+                                <td class="py-3 px-3 text-brand-400 font-medium" x-text="user.role"></td>
+                                <td class="py-3 px-3 font-mono text-slate-400" x-text="user.password"></td>
+                                <td class="py-3 px-3 text-right">
+                                    <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" x-text="user.access"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-2 p-3.5 bg-slate-950/60 border border-slate-800/80 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                <span>🔒</span>
+                <span><b>Bezpieczeństwo RBAC:</b> Zgodnie z konfiguracją, Właściciel widzi pełną strukturę, natomiast Administrator widzi wyłącznie swój zespół i użytkowników, mając całkowicie ukryte konto oraz hasło Właściciela.</span>
+            </div>
         </div>
-    </body>
-    </html>
-    """
-    return html
 
-@app.post("/admin/add")
-def admin_add(key: str = Form(...), package: str = Form(...), username: str = Form(...), password: str = Form(...), notes: str = Form(""), admin: str = Depends(verify_admin)):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT OR REPLACE INTO licenses (key, package, status, username, password, notes) VALUES (?, ?, 'active', ?, ?, ?)", (key, package, username, password, notes))
-        conn.commit()
-    except Exception as e:
-        print("Error:", e)
-    conn.close()
-    return HTMLResponse("<script>window.location='/admin';</script>")
+    </div>
 
-@app.get("/admin/status")
-def admin_status(key: str, status: str, admin: str = Depends(verify_admin)):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("UPDATE licenses SET status = ? WHERE key = ?", (status, key))
-    conn.commit()
-    conn.close()
-    return HTMLResponse("<script>window.location='/admin';</script>")
+    <script>
+        function panelApp() {
+            return {
+                isLoggedIn: false,
+                username: '',
+                password: '',
+                role: '',
+                errorMsg: '',
+                users: [],
+                async login() {
+                    this.errorMsg = '';
+                    try {
+                        let res = await fetch('/api/verify', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({username: this.username, password: this.password})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'valid') {
+                            this.isLoggedIn = true;
+                            this.role = data.role;
+                            this.loadUsers();
+                        } else {
+                            this.errorMsg = data.error || 'Nieprawidłowe dane logowania.';
+                        }
+                    } catch(e) {
+                        this.errorMsg = 'Błąd połączenia z serwerem.';
+                    }
+                },
+                async loadUsers() {
+                    try {
+                        let res = await fetch('/api/users', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({username: this.username})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.users = data.users;
+                        }
+                    } catch(e) {}
+                },
+                logout() {
+                    this.isLoggedIn = false;
+                    this.username = '';
+                    this.password = '';
+                    this.users = [];
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+"""
 
-@app.get("/admin/delete")
-def admin_delete(key: str, admin: str = Depends(verify_admin)):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM licenses WHERE key = ?", (key,))
-    conn.commit()
-    conn.close()
-    return HTMLResponse("<script>window.location='/admin';</script>")
+@app.route('/')
+def serve_panel():
+    """Serwuje wizualny Panel Administracyjny pod adresem głównym serwera"""
+    return render_template_string(PANEL_HTML)
+
+
+@app.route('/api/verify', methods=['POST'])
+def verify_license():
+    """Endpoint używany zarówno przez aplikację kliencką, jak i przez Panel"""
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if username in USERS_DB:
+        user = USERS_DB[username]
+        if user["password"] == password:
+            return jsonify({
+                "status": "valid",
+                "package": user["package"],
+                "role": user["role"]
+            })
+        else:
+            return jsonify({
+                "status": "invalid",
+                "error": "Nieprawidłowe hasło dla tego konta."
+            }), 200
+
+    return jsonify({
+        "status": "invalid",
+        "error": "Nie znaleziono takiego użytkownika."
+    }), 200
+
+
+@app.route('/api/users', methods=['POST'])
+def get_manageable_users():
+    """Endpoint zwracający listę kont z uwzględnieniem restrykcji poziomu dostępu (RBAC)"""
+    data = request.get_json() or {}
+    current_username = data.get("username", "").strip()
+
+    all_accounts = [
+        {"username": "maxikk", "role": "Właściciel", "password": "21288371", "access": "Pełny dostęp właścicielski"},
+        {"username": "olafekk7", "role": "Admin", "password": "Emo14578", "access": "Zarządzanie bez wglądu w Właściciela"}
+    ]
+
+    # Reguły zabezpieczeń RBAC po stronie serwera:
+    if current_username == "maxikk":
+        # Właściciel widzi wszystko
+        return jsonify({"status": "success", "users": all_accounts})
+    
+    elif current_username == "olafekk7":
+        # Admin widzi tylko siebie / zwykłych użytkowników — KONTO WŁAŚCICIELA JEST CAŁKOWICIE UKRYTE
+        filtered_accounts = [u for u in all_accounts if u["username"] != "maxikk"]
+        return jsonify({"status": "success", "users": filtered_accounts})
+    
+    else:
+        return jsonify({"status": "success", "users": []})
+
+
+if __name__ == '__main__':
+    # Uruchomienie lokalne
+    app.run(host='0.0.0.0', port=5000)
