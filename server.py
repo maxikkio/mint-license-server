@@ -6,9 +6,9 @@ import sqlite3
 app = FastAPI()
 security = HTTPBasic()
 
-# Konfiguracja logowania do Twojego Panelu Administratora
+# Twoje dane logowania do panelu
 ADMIN_USER = "maxikk"
-ADMIN_PASS = "21288371"  # Możesz tu wpisać własne hasło
+ADMIN_PASS = "21288371"
 
 def init_db():
     conn = sqlite3.connect("licenses.db")
@@ -17,9 +17,24 @@ def init_db():
         CREATE TABLE IF NOT EXISTS licenses (
             key TEXT PRIMARY KEY,
             package TEXT,
-            active INTEGER
+            status TEXT DEFAULT 'active',
+            username TEXT,
+            notes TEXT
         )
     """)
+    # Automatyczna migracja dla starszych tabel
+    try:
+        cursor.execute("ALTER TABLE licenses ADD COLUMN status TEXT DEFAULT 'active'")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE licenses ADD COLUMN username TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE licenses ADD COLUMN notes TEXT")
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -34,16 +49,17 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         )
     return credentials.username
 
-# Endpoint, który sprawdza aplikacja klienta
+# Endpoint, który odpytuje Twoja aplikacja (klient)
 @app.get("/api/verify/{key}")
 def verify_key(key: str):
     conn = sqlite3.connect("licenses.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT package, active FROM licenses WHERE key = ?", (key,))
+    cursor.execute("SELECT package, status FROM licenses WHERE key = ?", (key,))
     row = cursor.fetchone()
     conn.close()
     
-    if row and row[1] == 1:
+    # Klucz musi istnieć i mieć status 'active' (nie może być wstrzymany)
+    if row and row[1] == 'active':
         return {"status": "valid", "package": row[0]}
     return {"status": "invalid"}
 
@@ -52,7 +68,7 @@ def verify_key(key: str):
 def admin_panel(admin: str = Depends(verify_admin)):
     conn = sqlite3.connect("licenses.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT key, package, active FROM licenses")
+    cursor.execute("SELECT key, package, status, username, notes FROM licenses")
     rows = cursor.fetchall()
     conn.close()
 
@@ -63,56 +79,95 @@ def admin_panel(admin: str = Depends(verify_admin)):
         <meta charset="UTF-8">
         <title>Panel Licencji - Mint Pro</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            function generateKey() {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                const seg = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                document.getElementById('keyInput').value = `MINT-${seg()}-${seg()}-${seg()}`;
+            }
+        </script>
     </head>
     <body class="bg-[#090d16] text-slate-100 min-h-screen p-8 font-sans">
-        <div class="max-w-4xl mx-auto flex flex-col gap-6">
+        <div class="max-w-5xl mx-auto flex flex-col gap-6">
             <header class="flex justify-between items-center border-b border-slate-800 pb-4">
-                <h1 class="text-xl font-bold text-white">🔑 Panel Administratora Licencji</h1>
-                <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full">Online</span>
+                <h1 class="text-xl font-bold text-white flex items-center gap-2">🔑 Panel Administratora Licencji</h1>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full">Online</span>
+                </div>
             </header>
 
+            <!-- Kafel dodawania klucza -->
             <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Generuj nowy klucz</h2>
-                <form action="/admin/add" method="post" class="flex gap-4">
-                    <input type="text" name="key" placeholder="Wpisz lub wygeneruj klucz (np. MINT-PRO-XYZ)" required 
-                           class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
-                    <input type="text" name="package" value="PRO" readonly 
-                           class="w-28 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-center text-slate-400">
-                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/20">Dodaj klucz</button>
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Dodaj nowy klucz licencyjny</h2>
+                <form action="/admin/add" method="post" class="flex flex-col gap-4">
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <input type="text" id="keyInput" name="key" placeholder="Kliknij losuj lub wpisz klucz..." required 
+                                   class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono text-emerald-300 focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <button type="button" onclick="generateKey()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20">🎲 Losuj klucz</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input type="text" name="username" placeholder="Nazwa użytkownika (np. Jan Kowalski)" 
+                               class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+                        <input type="text" name="notes" placeholder="Notatki (np. Allegro / Licencja roczna)" 
+                               class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div class="flex justify-between items-center pt-2">
+                        <input type="hidden" name="package" value="PRO">
+                        <span class="text-xs text-slate-500">Pakiet: <b class="text-slate-300">PRO</b> | Domyślny status: <b class="text-emerald-400">Aktywny</b></span>
+                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/20">💾 Zapisz w bazie</button>
+                    </div>
                 </form>
             </div>
 
+            <!-- Lista kluczy -->
             <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Aktywne klucze w bazie</h2>
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="border-b border-slate-800 text-xs text-slate-500 font-semibold">
-                            <th class="py-3">Klucz licencyjny</th>
-                            <th class="py-3 text-center">Pakiet</th>
-                            <th class="py-3 text-center">Status</th>
-                            <th class="py-3 text-right">Akcja</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-xs divide-y divide-slate-800/40">
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Zarządzanie licencjami</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-xs text-slate-500 font-semibold">
+                                <th class="py-3 px-2">Klucz / Użytkownik</th>
+                                <th class="py-3 px-2">Notatki</th>
+                                <th class="py-3 px-2 text-center">Pakiet</th>
+                                <th class="py-3 px-2 text-center">Status</th>
+                                <th class="py-3 px-2 text-right">Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-xs divide-y divide-slate-800/40">
     """
     for r in rows:
-        status_badge = '<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">Aktywny</span>' if r[2] == 1 else '<span class="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2.5 py-0.5 rounded-full font-semibold">Zablokowany</span>'
+        key, pkg, status_val, user, notes = r[0], r[1], r[2], r[3] or "Brak", r[4] or ""
+        if status_val == 'active':
+            status_badge = '<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">Aktywny</span>'
+            toggle_btn = f'<a href="/admin/status?key={key}&status=paused" class="text-amber-400 hover:text-amber-300 font-semibold px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">Wstrzymaj</a>'
+        else:
+            status_badge = '<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">Wstrzymany</span>'
+            toggle_btn = f'<a href="/admin/status?key={key}&status=active" class="text-emerald-400 hover:text-emerald-300 font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">Wznów</a>'
+
         html += f"""
                         <tr class="hover:bg-slate-800/30">
-                            <td class="py-3 font-mono text-emerald-300 font-semibold">{r[0]}</td>
-                            <td class="py-3 text-center font-mono">{r[1]}</td>
-                            <td class="py-3 text-center">{status_badge}</td>
-                            <td class="py-3 text-right">
-                                <a href="/admin/delete?key={r[0]}" class="text-rose-400 hover:text-rose-300 font-semibold px-3 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20">Usuń</a>
+                            <td class="py-3 px-2">
+                                <div class="font-mono text-emerald-300 font-bold">{key}</div>
+                                <div class="text-slate-400 text-[11px] mt-0.5">👤 {user}</div>
+                            </td>
+                            <td class="py-3 px-2 text-slate-300 max-w-xs truncate">{notes}</td>
+                            <td class="py-3 px-2 text-center font-mono">{pkg}</td>
+                            <td class="py-3 px-2 text-center">{status_badge}</td>
+                            <td class="py-3 px-2 text-right space-x-2">
+                                {toggle_btn}
+                                <a href="/admin/delete?key={key}" class="text-rose-400 hover:text-rose-300 font-semibold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20">Usuń</a>
                             </td>
                         </tr>
         """
     if not rows:
-        html += '<tr><td colspan="4" class="py-8 text-center text-slate-600 italic">Brak kluczy w bazie. Wygeneruj pierwszy powyżej!</td></tr>'
+        html += '<tr><td colspan="5" class="py-8 text-center text-slate-600 italic">Brak kluczy w bazie. Wygeneruj pierwszy powyżej!</td></tr>'
 
     html += """
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </body>
@@ -121,14 +176,23 @@ def admin_panel(admin: str = Depends(verify_admin)):
     return html
 
 @app.post("/admin/add")
-def admin_add(key: str = Form(...), package: str = Form(...), admin: str = Depends(verify_admin)):
+def admin_add(key: str = Form(...), package: str = Form(...), username: str = Form(""), notes: str = Form(""), admin: str = Depends(verify_admin)):
     conn = sqlite3.connect("licenses.db")
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO licenses (key, package, active) VALUES (?, ?, 1)", (key, package))
+        cursor.execute("INSERT OR REPLACE INTO licenses (key, package, status, username, notes) VALUES (?, ?, 'active', ?, ?)", (key, package, username, notes))
         conn.commit()
-    except:
-        pass
+    except Exception as e:
+        print("Error:", e)
+    conn.close()
+    return HTMLResponse("<script>window.location='/admin';</script>")
+
+@app.get("/admin/status")
+def admin_status(key: str, status: str, admin: str = Depends(verify_admin)):
+    conn = sqlite3.connect("licenses.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE licenses SET status = ? WHERE key = ?", (status, key))
+    conn.commit()
     conn.close()
     return HTMLResponse("<script>window.location='/admin';</script>")
 
