@@ -5,7 +5,7 @@ import string
 
 app = Flask(__name__)
 
-# Baza danych kont zespołu
+# Baza danych kont zespołu administracyjnego
 USERS_DB = {
     "maxikk": {
         "username": "maxikk",
@@ -21,13 +21,10 @@ USERS_DB = {
     }
 }
 
-# Baza danych kluczy licencyjnych
-KEYS_DB = {
-    "MINT-PRO-2026-X7K9": {"key": "MINT-PRO-2026-X7K9", "status": "Aktywny", "package": "PRO", "created_at": "2026-07-01 10:00:00"},
-    "MINT-PREM-9999-ABCD": {"key": "MINT-PREM-9999-ABCD", "status": "Aktywny", "package": "PREMIUM", "created_at": "2026-07-10 14:20:00"}
-}
+# Czysta baza kluczy licencyjnych (pusta, gotowa do dodawania)
+KEYS_DB = {}
 
-# Historia logowań (ostatnich 10)
+# Historia logowań (zapamiętuje ostatnich 10)
 LOGIN_HISTORY = []
 
 def record_login(username, role):
@@ -40,7 +37,7 @@ def record_login(username, role):
     if len(LOGIN_HISTORY) > 10:
         LOGIN_HISTORY.pop()
 
-# Panel Administracyjny w HTML + Tailwind + Alpine.js z obsługą zakładek
+# Panel Administracyjny w HTML + Tailwind + Alpine.js
 PANEL_HTML = """
 <!DOCTYPE html>
 <html lang="pl" class="dark">
@@ -98,7 +95,7 @@ PANEL_HTML = """
     </div>
 
     <!-- GŁÓWNY PANEL Z ZAKŁADKAMI -->
-    <div x-show="isLoggedIn" class="max-w-4xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn" class="max-w-5xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
         
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
             <div class="flex items-center gap-3">
@@ -122,7 +119,7 @@ PANEL_HTML = """
                 👥 Zespół i Audyt Logowań
             </button>
             <button @click="activeTab = 'licenses'" :class="activeTab === 'licenses' ? 'bg-brand-500/10 border-brand-500/30 text-brand-400' : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:text-slate-200'" class="px-4 py-2 rounded-xl border text-xs font-semibold transition-all">
-                🔑 Klucze i Licencje
+                🔑 Klucze i Licencje Użytkowników
             </button>
         </div>
 
@@ -192,36 +189,68 @@ PANEL_HTML = """
         <!-- ZAKŁADKA 2: KLUCZE I LICENCJE -->
         <div x-show="activeTab === 'licenses'" class="flex flex-col gap-6" style="display: none;">
             <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between flex-wrap gap-4">
                     <div>
-                        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne Klucze Licencyjne</h2>
-                        <p class="text-[11px] text-slate-500">Zarządzaj kluczami dostępu dla klientów oprogramowania</p>
+                        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie Kluczami Licencyjnymi</h2>
+                        <p class="text-[11px] text-slate-500">Dodawaj klucze powiązane z nazwami użytkowników, hasłami i notatkami</p>
                     </div>
-                    <button @click="generateKey()" class="px-4 py-2 text-xs font-semibold rounded-xl bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/20 transition-all">
-                        + Generuj Nowy Klucz
-                    </button>
                 </div>
 
+                <!-- Formularz dodawania nowego klucza -->
+                <form @submit.prevent="addKey()" class="grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
+                        <input type="text" x-model="newKeyForm.username" required placeholder="np. jan_kowalski"
+                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Hasło</label>
+                        <input type="text" x-model="newKeyForm.password" required placeholder="hasło klienta"
+                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz licencyjny</label>
+                        <input type="text" x-model="newKeyForm.key" required placeholder="MINT-XXXX..."
+                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatki</label>
+                        <input type="text" x-model="newKeyForm.notes" placeholder="np. klient VIP"
+                            class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex items-end">
+                        <button type="submit" class="w-full py-2 bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs rounded-lg shadow-md transition-all">
+                            + Dodaj Klucz
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Tabela kluczy -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
+                                <th class="py-3 px-3">Użytkownik</th>
+                                <th class="py-3 px-3">Hasło</th>
                                 <th class="py-3 px-3">Klucz Licencyjny</th>
-                                <th class="py-3 px-3">Pakiet</th>
-                                <th class="py-3 px-3">Data utworzenia</th>
+                                <th class="py-3 px-3">Notatki</th>
                                 <th class="py-3 px-3 text-right">Status</th>
                             </tr>
                         </thead>
                         <tbody class="text-xs divide-y divide-slate-800/40">
                             <template x-for="item in keysList" :key="item.key">
                                 <tr class="hover:bg-slate-800/30 transition-colors">
+                                    <td class="py-3 px-3 font-semibold text-slate-200" x-text="item.username"></td>
+                                    <td class="py-3 px-3 font-mono text-slate-400" x-text="item.password"></td>
                                     <td class="py-3 px-3 font-mono text-brand-400 font-semibold" x-text="item.key"></td>
-                                    <td class="py-3 px-3 text-slate-200" x-text="item.package"></td>
-                                    <td class="py-3 px-3 text-slate-400" x-text="item.created_at"></td>
+                                    <td class="py-3 px-3 text-slate-300 italic" x-text="item.notes || 'Brak'"></td>
                                     <td class="py-3 px-3 text-right">
                                         <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" x-text="item.status"></span>
                                     </td>
                                 </tr>
+                            </template>
+                            <template x-if="keysList.length === 0">
+                                <tr><td colspan="5" class="py-6 text-center text-slate-600 italic">Brak kluczy w bazie. Dodaj pierwszy powyżej.</td></tr>
                             </template>
                         </tbody>
                     </table>
@@ -243,6 +272,12 @@ PANEL_HTML = """
                 users: [],
                 history: [],
                 keysList: [],
+                newKeyForm: {
+                    username: '',
+                    password: '',
+                    key: '',
+                    notes: ''
+                },
                 async login() {
                     this.errorMsg = '';
                     try {
@@ -278,16 +313,22 @@ PANEL_HTML = """
                         }
                     } catch(e) {}
                 },
-                async generateKey() {
+                async addKey() {
                     try {
-                        let res = await fetch('/api/keys/generate', {
+                        let res = await fetch('/api/keys/add', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({username: this.username})
+                            body: JSON.stringify({
+                                admin_username: this.username,
+                                ...this.newKeyForm
+                            })
                         });
                         let data = await res.json();
                         if (data.status === 'success') {
                             this.keysList = data.keys;
+                            this.newKeyForm = { username: '', password: '', key: '', notes: '' };
+                        } else {
+                            alert(data.message || 'Nie udało się dodać klucza.');
                         }
                     } catch(e) {}
                 },
@@ -319,7 +360,7 @@ def verify_license():
     password = data.get("password", "").strip()
     key = data.get("key", "").strip().upper()
 
-    # 1. Logowanie kont administracyjnych
+    # 1. Weryfikacja kont administracyjnych/zespołu
     if username in USERS_DB:
         user = USERS_DB[username]
         if user["password"] == password:
@@ -335,14 +376,16 @@ def verify_license():
                 "error": "Nieprawidłowe hasło dla tego konta."
             }), 200
 
-    # 2. Weryfikacja kluczy licencyjnych
-    if key in KEYS_DB:
-        record_login(f"Klucz: {key[:10]}...", "Użytkownik")
-        return jsonify({
-            "status": "valid",
-            "package": KEYS_DB[key]["package"],
-            "role": "Użytkownik"
-        })
+    # 2. Weryfikacja kluczy licencyjnych klienta (sprawdza klucz, login i hasło)
+    for k, ldata in KEYS_DB.items():
+        if ldata["key"] == key and ldata["status"] == "Aktywny":
+            if ldata["username"] == username and ldata["password"] == password:
+                record_login(f"Klient: {username}", "Użytkownik")
+                return jsonify({
+                    "status": "valid",
+                    "package": "PRO",
+                    "role": "Użytkownik"
+                })
 
     return jsonify({
         "status": "invalid",
@@ -362,12 +405,12 @@ def get_dashboard_data():
 
     keys_array = list(KEYS_DB.values())
 
-    # Bezpieczeństwo haseł: każdy widzi siebie, ale tylko Właściciel widzi hasła innych
+    # Bezpieczeństwo haseł: Każdy widzi siebie, ale TYLKO Właściciel widzi hasła innych
     users_to_send = []
     for acc in base_accounts:
         user_copy = acc.copy()
         if current_username != "maxikk" and user_copy["username"] != current_username:
-            user_copy["password"] = "********"  # Ukrywanie hasła innych użytkowników
+            user_copy["password"] = "********"
         users_to_send.append(user_copy)
 
     # Filtracja historii (Właściciel widzi wszystko, inni widzą bez Właściciela)
@@ -384,19 +427,27 @@ def get_dashboard_data():
     })
 
 
-@app.route('/api/keys/generate', methods=['POST'])
-def generate_new_key():
+@app.route('/api/keys/add', methods=['POST'])
+def add_new_key():
     data = request.get_json() or {}
-    username = data.get("username", "").strip()
+    admin_username = data.get("admin_username", "").strip()
 
-    if username not in USERS_DB:
+    if admin_username not in USERS_DB:
         return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
 
-    random_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    new_key_str = f"MINT-PRO-{datetime.now().strftime('%Y')}-{random_suffix}"
-    
-    KEYS_DB[new_key_str] = {
-        "key": new_key_str,
+    k_val = data.get("key", "").strip().upper()
+    u_val = data.get("username", "").strip()
+    p_val = data.get("password", "").strip()
+    n_val = data.get("notes", "").strip()
+
+    if not k_val or not u_val or not p_val:
+        return jsonify({"status": "error", "message": "Wypełnij wymagane pola klucza!"}), 400
+
+    KEYS_DB[k_val] = {
+        "key": k_val,
+        "username": u_val,
+        "password": p_val,
+        "notes": n_val,
         "status": "Aktywny",
         "package": "PRO",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
