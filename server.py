@@ -213,7 +213,17 @@ PANEL_HTML = """
                 <div class="flex items-center justify-between flex-wrap gap-4">
                     <div>
                         <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie Kluczami Licencyjnymi</h2>
-                        <p class="text-[11px] text-slate-500">Dane zapisują się automatycznie na dysku – nie znikną po restarcie serwera.</p>
+                        <p class="text-[11px] text-slate-500">Zrób backup bazy przed aktualizacją kodu, aby nie stracić kluczy!</p>
+                    </div>
+                    <!-- Przyciski Backup / Restore -->
+                    <div class="flex items-center gap-2">
+                        <button @click="exportBackup()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-semibold transition-all cursor-pointer">
+                            📥 Eksportuj Bazę (Backup)
+                        </button>
+                        <label class="px-3 py-1.5 bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/30 rounded-lg text-xs font-semibold transition-all cursor-pointer">
+                            📤 Importuj Bazę
+                            <input type="file" accept=".json" @change="importBackup($event)" class="hidden">
+                        </label>
                     </div>
                 </div>
 
@@ -319,7 +329,7 @@ PANEL_HTML = """
                 <div class="flex flex-col gap-1">
                     <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz Licencyjny</label>
                     <input type="text" x-model="editForm.key" required
-                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
+                        class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
                 </div>
                 <div class="flex flex-col gap-1">
                     <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatka (opcjonalne)</label>
@@ -492,6 +502,52 @@ PANEL_HTML = """
                         }
                     } catch(e) {}
                 },
+                async exportBackup() {
+                    try {
+                        let res = await fetch('/api/keys/export', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ admin_username: this.username })
+                        });
+                        let blob = await res.blob();
+                        let url = window.URL.createObjectURL(blob);
+                        let a = document.createElement('a');
+                        a.href = url;
+                        a.download = `keys_backup_${new Date().toISOString().slice(0,10)}.json`;
+                        a.click();
+                    } catch(e) {
+                        alert('Błąd podczas eksportu bazy.');
+                    }
+                },
+                async importBackup(event) {
+                    let file = event.target.files[0];
+                    if (!file) return;
+                    let reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            let jsonContent = JSON.parse(e.target.result);
+                            let res = await fetch('/api/keys/import', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    admin_username: this.username,
+                                    imported_keys: jsonContent
+                                })
+                            });
+                            let data = await res.json();
+                            if (data.status === 'success') {
+                                this.keysList = data.keys;
+                                alert('Pomyślnie przywrócono bazę kluczy z backupu!');
+                            } else {
+                                alert(data.message || 'Błąd importu.');
+                            }
+                        } catch(err) {
+                            alert('Nieprawidłowy format pliku JSON.');
+                        }
+                    };
+                    reader.readAsText(file);
+                    event.target.value = '';
+                },
                 logout() {
                     this.isLoggedIn = false;
                     this.username = '';
@@ -520,7 +576,6 @@ def verify_license():
     password = (data.get("password") or "").strip()
     key = (data.get("key") or "").strip().upper()
 
-    # 1. Logowanie kont administracyjnych w panelu /admin
     if username in USERS_DB and not key:
         user = USERS_DB[username]
         if user["password"] == password:
@@ -536,7 +591,6 @@ def verify_license():
                 "error": "Nieprawidłowe hasło dla konta administracyjnego."
             }), 200
 
-    # 2. Weryfikacja kluczy licencyjnych dla klientów
     if key in KEYS_DB:
         ldata = KEYS_DB[key]
         if ldata.get("status") == "Aktywny" and ldata.get("username") == username and ldata.get("password") == password:
@@ -701,6 +755,37 @@ def delete_key():
         return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
 
     return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
+
+
+@app.route('/api/keys/export', methods=['POST'])
+def export_keys():
+    data = request.get_json() or {}
+    admin_username = (data.get("admin_username") or "").strip()
+    if admin_username not in USERS_DB:
+        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
+    
+    return app.response_class(
+        response=json.dumps(KEYS_DB, ensure_ascii=False, indent=4),
+        status=200,
+        mimetype='application/json'
+    )
+
+
+@app.route('/api/keys/import', methods=['POST'])
+def import_keys():
+    global KEYS_DB
+    data = request.get_json() or {}
+    admin_username = (data.get("admin_username") or "").strip()
+    if admin_username not in USERS_DB:
+        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
+
+    imported = data.get("imported_keys")
+    if isinstance(imported, dict):
+        KEYS_DB = imported
+        save_keys()
+        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
+    
+    return jsonify({"status": "error", "message": "Nieprawidłowa struktura danych."}), 400
 
 
 if __name__ == '__main__':
