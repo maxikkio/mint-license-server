@@ -18,7 +18,6 @@ USERS_DB = {
     }
 }
 
-# Wbudowany Panel Administracyjny w przeglądarce (HTML + Tailwind + Alpine.js)
 PANEL_HTML = """
 <!DOCTYPE html>
 <html lang="pl" class="dark">
@@ -51,19 +50,19 @@ PANEL_HTML = """
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
             <h1 class="text-lg font-bold text-white tracking-tight">Panel Administracyjny Serwera</h1>
-            <p class="text-xs text-slate-400">Zaloguj się jako Właściciel lub Administrator</p>
+            <p class="text-xs text-slate-400">Zaloguj się na swoje konto administracyjne</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
-                <input type="text" x-model="username" required placeholder="np. maxikk"
+                <input type="text" x-model="username" required placeholder=""
                     class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hasło</label>
-                <input type="password" x-model="password" required placeholder="••••••••"
+                <input type="password" x-model="password" required placeholder=""
                     class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
@@ -127,7 +126,7 @@ PANEL_HTML = """
             
             <div class="mt-2 p-3.5 bg-slate-950/60 border border-slate-800/80 rounded-xl text-xs text-slate-400 flex items-center gap-2">
                 <span>🔒</span>
-                <span><b>Bezpieczeństwo RBAC:</b> Zgodnie z konfiguracją, Właściciel widzi pełną strukturę, natomiast Administrator widzi wyłącznie swój zespół i użytkowników, mając całkowicie ukryte konto oraz hasło Właściciela.</span>
+                <span><b>Bezpieczeństwo RBAC:</b> Poziom dostępu ogranicza wgląd do konta Właściciela dla niższych ról.</span>
             </div>
         </div>
 
@@ -191,13 +190,11 @@ PANEL_HTML = """
 @app.route('/')
 @app.route('/admin')
 def serve_panel():
-    """Serwuje wizualny Panel Administracyjny pod adresem głównym oraz /admin"""
     return render_template_string(PANEL_HTML)
 
 
 @app.route('/api/verify', methods=['POST'])
 def verify_license():
-    """Endpoint używany zarówno przez aplikację kliencką, jak i przez Panel"""
     data = request.get_json() or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
@@ -224,7 +221,6 @@ def verify_license():
 
 @app.route('/api/users', methods=['POST'])
 def get_manageable_users():
-    """Endpoint zwracający listę kont z uwzględnieniem restrykcji poziomu dostępu (RBAC)"""
     data = request.get_json() or {}
     current_username = data.get("username", "").strip()
 
@@ -233,16 +229,11 @@ def get_manageable_users():
         {"username": "olafekk7", "role": "Admin", "password": "Emo14578", "access": "Zarządzanie bez wglądu w Właściciela"}
     ]
 
-    # Reguły zabezpieczeń RBAC po stronie serwera:
     if current_username == "maxikk":
-        # Właściciel widzi wszystko
         return jsonify({"status": "success", "users": all_accounts})
-    
     elif current_username == "olafekk7":
-        # Admin widzi tylko siebie / zwykłych użytkowników — KONTO WŁAŚCICIELA JEST CAŁKOWICIE UKRYTE
         filtered_accounts = [u for u in all_accounts if u["username"] != "maxikk"]
         return jsonify({"status": "success", "users": filtered_accounts})
-    
     else:
         return jsonify({"status": "success", "users": []})
 
