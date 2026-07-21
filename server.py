@@ -24,7 +24,7 @@ USERS_DB = {
 # Baza kluczy licencyjnych
 KEYS_DB = {}
 
-# Historia logowań (zapamiętuje ostatnich 10)
+# Historia logowań do panelu administracyjnego (zapamiętuje ostatnich 10)
 LOGIN_HISTORY = []
 
 def record_login(username, role):
@@ -95,7 +95,7 @@ PANEL_HTML = """
     </div>
 
     <!-- GŁÓWNY PANEL Z ZAKŁADKAMI -->
-    <div x-show="isLoggedIn" class="max-w-5xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn" class="max-w-6xl w-full flex flex-col gap-6" style="display: none;" :style="isLoggedIn ? 'display: flex;' : 'display: none;'">
         
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
             <div class="flex items-center gap-3">
@@ -157,9 +157,9 @@ PANEL_HTML = """
                 </div>
             </div>
 
-            <!-- Historia logowań (ostatnich 10) -->
+            <!-- Historia logowań administracyjnych (ostatnich 10) -->
             <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
-                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">📜 Ostatnie 10 logowań do panelu</h2>
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">📜 Ostatnie 10 logowań do panelu administratorów</h2>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -196,7 +196,7 @@ PANEL_HTML = """
                     </div>
                 </div>
 
-                <!-- Formularz dodawania nowego klucza (puste pola bez przykładowych tekstów) -->
+                <!-- Formularz dodawania nowego klucza -->
                 <form @submit.prevent="addKey()" class="grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
@@ -228,7 +228,7 @@ PANEL_HTML = """
                     </div>
                 </form>
 
-                <!-- Tabela kluczy z opcjami statusu -->
+                <!-- Tabela kluczy z oddzielną kolumną statusu i zarządzania -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -237,7 +237,8 @@ PANEL_HTML = """
                                 <th class="py-3 px-3">Hasło</th>
                                 <th class="py-3 px-3">Klucz Licencyjny</th>
                                 <th class="py-3 px-3">Notatki</th>
-                                <th class="py-3 px-3 text-right">Zarządzanie / Status</th>
+                                <th class="py-3 px-3 text-center">Status</th>
+                                <th class="py-3 px-3 text-right">Zarządzanie</th>
                             </tr>
                         </thead>
                         <tbody class="text-xs divide-y divide-slate-800/40">
@@ -247,22 +248,24 @@ PANEL_HTML = """
                                     <td class="py-3 px-3 font-mono text-slate-400" x-text="item.password"></td>
                                     <td class="py-3 px-3 font-mono text-brand-400 font-semibold" x-text="item.key"></td>
                                     <td class="py-3 px-3 text-slate-300 italic" x-text="item.notes || 'Brak'"></td>
-                                    <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold"
+                                    <td class="py-3 px-3 text-center">
+                                        <span class="px-2.5 py-1 rounded-lg text-[10px] font-semibold"
                                             :class="{
                                                 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': item.status === 'Aktywny',
                                                 'bg-amber-500/10 text-amber-400 border border-amber-500/20': item.status === 'Wstrzymany',
                                                 'bg-rose-500/10 text-rose-400 border border-rose-500/20': item.status === 'Anulowany'
                                             }" x-text="item.status"></span>
-
+                                    </td>
+                                    <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
                                         <button @click="changeKeyStatus(item.key, 'Aktywny')" x-show="item.status !== 'Aktywny'" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[10px] font-semibold transition-all">Aktywuj</button>
                                         <button @click="changeKeyStatus(item.key, 'Wstrzymany')" x-show="item.status === 'Aktywny'" class="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded text-[10px] font-semibold transition-all">Wstrzymaj</button>
                                         <button @click="changeKeyStatus(item.key, 'Anulowany')" x-show="item.status !== 'Anulowany'" class="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[10px] font-semibold transition-all">Anuluj</button>
+                                        <button @click="deleteKey(item.key)" class="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[10px] font-semibold transition-all">Usuń</button>
                                     </td>
                                 </tr>
                             </template>
                             <template x-if="keysList.length === 0">
-                                <tr><td colspan="5" class="py-6 text-center text-slate-600 italic">Brak kluczy w bazie. Dodaj pierwszy powyżej.</td></tr>
+                                <tr><td colspan="6" class="py-6 text-center text-slate-600 italic">Brak kluczy w bazie. Dodaj pierwszy powyżej.</td></tr>
                             </template>
                         </tbody>
                     </table>
@@ -365,6 +368,23 @@ PANEL_HTML = """
                         }
                     } catch(e) {}
                 },
+                async deleteKey(keyStr) {
+                    if (!confirm('Czy na pewno chcesz bezpowrotnie usunąć ten klucz?')) return;
+                    try {
+                        let res = await fetch('/api/keys/delete', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                admin_username: this.username,
+                                key: keyStr
+                            })
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.keysList = data.keys;
+                        }
+                    } catch(e) {}
+                },
                 logout() {
                     this.isLoggedIn = false;
                     this.username = '';
@@ -393,7 +413,7 @@ def verify_license():
     password = data.get("password", "").strip()
     key = data.get("key", "").strip().upper()
 
-    # 1. Logowanie kont administracyjnych w panelu /admin (bez klucza)
+    # 1. Logowanie kont administracyjnych w panelu /admin (zapisywane w historii)
     if username in USERS_DB and not key:
         user = USERS_DB[username]
         if user["password"] == password:
@@ -409,11 +429,10 @@ def verify_license():
                 "error": "Nieprawidłowe hasło dla konta administracyjnego."
             }), 200
 
-    # 2. Weryfikacja kluczy licencyjnych (dla aplikacji klienckiej)
+    # 2. Weryfikacja kluczy licencyjnych dla klientów (brak wpisów w historii logowań panelu)
     if key in KEYS_DB:
         ldata = KEYS_DB[key]
         if ldata["status"] == "Aktywny" and ldata["username"] == username and ldata["password"] == password:
-            record_login(f"Klient: {username}", "Użytkownik")
             return jsonify({
                 "status": "valid",
                 "package": "PRO",
@@ -507,6 +526,22 @@ def change_key_status():
 
     if key in KEYS_DB and new_status in ["Aktywny", "Wstrzymany", "Anulowany"]:
         KEYS_DB[key]["status"] = new_status
+        return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
+
+    return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
+
+
+@app.route('/api/keys/delete', methods=['POST'])
+def delete_key():
+    data = request.get_json() or {}
+    admin_username = data.get("admin_username", "").strip()
+    key = data.get("key", "").strip().upper()
+
+    if admin_username not in USERS_DB:
+        return jsonify({"status": "error", "message": "Brak uprawnień"}), 403
+
+    if key in KEYS_DB:
+        del KEYS_DB[key]
         return jsonify({"status": "success", "keys": list(KEYS_DB.values())})
 
     return jsonify({"status": "error", "message": "Nie znaleziono klucza"}), 404
