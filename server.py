@@ -7,8 +7,8 @@ app = FastAPI()
 security = HTTPBasic()
 
 # Konfiguracja logowania do Twojego Panelu Administratora
-ADMIN_USER = "admin"
-ADMIN_PASS = "TwojeTajneHaslo123"  # Możesz tu wpisać własne hasło
+ADMIN_USER = "maxikk"
+ADMIN_PASS = "21288371"  # Możesz tu wpisać własne hasło
 
 def init_db():
     conn = sqlite3.connect("licenses.db")
