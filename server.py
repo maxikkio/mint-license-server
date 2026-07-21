@@ -189,8 +189,9 @@ PANEL_HTML = """
 """
 
 @app.route('/')
+@app.route('/admin')
 def serve_panel():
-    """Serwuje wizualny Panel Administracyjny pod adresem głównym serwera"""
+    """Serwuje wizualny Panel Administracyjny pod adresem głównym oraz /admin"""
     return render_template_string(PANEL_HTML)
 
 
@@ -247,5 +248,4 @@ def get_manageable_users():
 
 
 if __name__ == '__main__':
-    # Uruchomienie lokalne
     app.run(host='0.0.0.0', port=5000)
