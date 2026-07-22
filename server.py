@@ -5,7 +5,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Baza danych ról administracyjnych (Marketing przejęty przez olafekk7, usunięto marketing)
+# Baza danych ról administracyjnych
 ELEVATED_USERS = {
     "maxikk": {
         "password": "21288371",
@@ -25,7 +25,7 @@ KEYS_DB = {
         "password": "haslo123",
         "key": "ABCD-1234-EFGH-5678",
         "notes": "Pierwszy klient testowy",
-        "status": "Aktywny",  # Aktywny, Wstrzymany, Anulowany
+        "status": "Aktywny",
         "created_at": "2026-07-22 12:00:00"
     }
 }
@@ -161,7 +161,6 @@ PANEL_HTML = """
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
                 <div class="flex gap-2">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <!-- Opcje backupu dostępne dla Właściciela -->
                     <template x-if="form.username === 'maxikk'">
                         <div class="flex gap-2">
                             <a href="/api/backup/download" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center">📥 Pobierz Backup</a>
@@ -203,7 +202,6 @@ PANEL_HTML = """
                                     <button @click="changeStatus(username, 'Aktywny')" class="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded text-[10px]">Aktywuj</button>
                                     <button @click="changeStatus(username, 'Wstrzymany')" class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded text-[10px]">Wstrzymaj</button>
                                     <button @click="changeStatus(username, 'Anulowany')" class="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded text-[10px]">Anuluj</button>
-                                    <!-- Usuń widoczne tylko dla Właściciela (maxikk) -->
                                     <template x-if="form.username === 'maxikk'">
                                         <button @click="deleteKey(username)" class="px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-[10px] font-bold">Usuń</button>
                                     </template>
@@ -246,7 +244,6 @@ PANEL_HTML = """
                 <button type="submit" class="py-3 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all">Zapisz i Utwórz Klucz</button>
             </form>
         </div>
-
         <!-- 3. Historia Logowań -->
         <div x-show="activeTab === 'history'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historia logowań</h2>
@@ -285,7 +282,7 @@ PANEL_HTML = """
                         </tr>
                     </thead>
                     <tbody class="text-xs divide-y divide-slate-800/40">
-                         <template x-for="user in adminsList" :key="user.username">
+                        <template x-for="user in adminsList" :key="user.username">
                             <tr class="hover:bg-slate-800/30 transition-colors">
                                 <td class="py-3 px-3 font-semibold text-slate-200" x-text="user.username"></td>
                                 <td class="py-3 px-3 text-brand-400 font-medium" x-text="user.role"></td>
