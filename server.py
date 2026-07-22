@@ -13,9 +13,10 @@ DB_NAME = "mint_server.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    # COLLATE NOCASE sprawia, że loginy nie rozróżniają wielkich i małych liter
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS admins (
-            username TEXT PRIMARY KEY,
+            username TEXT PRIMARY KEY COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
             package TEXT NOT NULL,
@@ -24,7 +25,7 @@ def init_db():
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS keys_db (
-            username TEXT PRIMARY KEY,
+            username TEXT PRIMARY KEY COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             key TEXT NOT NULL,
             notes TEXT,
@@ -68,7 +69,7 @@ PANEL_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mint Server - Bezpieczny Panel</title>
+    <title>Mint Server - Komercyjny Panel Licencji</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
@@ -84,68 +85,75 @@ PANEL_HTML = """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        [x-cloak] { display: none !important; }
     </style>
 </head>
-<body class="bg-[#07090e] text-slate-100 min-h-screen flex flex-col items-center justify-start sm:justify-center p-3 sm:p-6 selection:bg-brand-500 selection:text-white" x-data="app()">
+<body class="bg-[#05070a] text-slate-100 min-h-screen flex flex-col items-center justify-start sm:justify-center p-3 sm:p-6 selection:bg-brand-500 selection:text-white" x-data="app()">
 
     <!-- EKRAN LOGOWANIA -->
-    <div x-show="!isLoggedIn" class="w-full max-w-md bg-slate-900/90 border border-slate-800/80 rounded-3xl p-5 sm:p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6 my-auto">
-        <div class="text-center flex flex-col items-center gap-2">
-            <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
-            <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">Logowanie do Systemu</h1>
-            <p class="text-xs text-slate-400">Podaj login i hasło konta</p>
+    <div x-show="!isLoggedIn" x-cloak class="w-full max-w-md bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-2xl flex flex-col gap-6 my-auto">
+        <div class="text-center flex flex-col items-center gap-3">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-500/20 to-emerald-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-2xl font-bold shadow-xl shadow-brand-500/10">⚡</div>
+            <div>
+                <h1 class="text-lg font-bold text-white tracking-tight">Mint License System</h1>
+                <p class="text-xs text-slate-400 mt-0.5">Zaloguj się do panelu zarządzania</p>
+            </div>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
-                <input type="text" x-model="form.username" required placeholder=""
-                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
+                <input type="text" x-model="form.username" required placeholder="Wpisz swój login"
+                    class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hasło</label>
-                <input type="password" x-model="form.password" required placeholder=""
-                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
+                <input type="password" x-model="form.password" required placeholder="••••••••"
+                    class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
-            <div x-show="message" class="text-xs px-3.5 py-2.5 rounded-xl font-medium text-center bg-rose-500/10 border border-rose-500/20 text-rose-400" x-text="message"></div>
+            <div x-show="message" x-cloak class="text-xs px-3.5 py-2.5 rounded-xl font-medium text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 animate-pulse" x-text="message"></div>
 
-            <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer">
-                Zaloguj się
+            <button type="submit" :disabled="loading" class="w-full py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-brand-500/20 transition-all cursor-pointer flex items-center justify-center gap-2">
+                <span x-show="loading" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                <span x-text="loading ? 'Logowanie...' : 'Zaloguj się'"></span>
             </button>
         </form>
 
         <div class="border-t border-slate-800/80 pt-4 text-center">
-            <p class="text-xs text-slate-400">Nie masz dostępu?</p>
-            <p class="text-xs text-brand-400 mt-1 font-medium">Kontakt: <a href="mailto:mbxryt24@zohomail.eu" class="underline">mbxryt24@zohomail.eu</a></p>
+            <p class="text-xs text-slate-500">Wsparcie techniczne:</p>
+            <p class="text-xs text-brand-400 mt-1 font-medium"><a href="mailto:mbxryt24@zohomail.eu" class="hover:underline">mbxryt24@zohomail.eu</a></p>
         </div>
     </div>
 
     <!-- PANEL KLIENTA -->
-    <div x-show="isLoggedIn && userData.role === 'Klient'" class="w-full max-w-2xl flex flex-col gap-6 my-auto" style="display: none;" :style="(isLoggedIn && userData.role === 'Klient') ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn && userData.role === 'Klient'" x-cloak class="w-full max-w-2xl flex flex-col gap-6 my-auto">
         <header class="flex items-center justify-between border-b border-slate-800 pb-4 gap-2">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold shrink-0">⚡</div>
                 <div>
-                    <h1 class="text-sm sm:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
+                    <h1 class="text-sm sm:text-base font-bold text-white flex items-center gap-2 flex-wrap">
                         <span>Panel Klienta</span>
                         <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2 py-0.5 rounded-full uppercase">PRO</span>
                     </h1>
                     <p class="text-xs text-slate-400 truncate">Witaj, <b class="text-slate-200" x-text="form.username"></b></p>
                 </div>
             </div>
-            <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all shrink-0">Wyloguj</button>
+            <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all cursor-pointer">Wyloguj</button>
         </header>
 
-        <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-5">
+        <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-5">
             <div>
-                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Twój Klucz Licencyjny Pro</h2>
-                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Twój Klucz Licencyjny</h2>
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <span class="font-mono text-brand-400 text-sm sm:text-base font-bold tracking-wider break-all" x-text="userData.key"></span>
-                    <span class="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0"
-                          :class="userData.status === 'Aktywny' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'"
-                          x-text="userData.status"></span>
+                    <div class="flex items-center gap-2">
+                        <button @click="copyToClipboard(userData.key)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all">📋 Kopiuj</button>
+                        <span class="text-[10px] px-2.5 py-1 rounded-lg font-semibold"
+                              :class="userData.status === 'Aktywny' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'"
+                              x-text="userData.status"></span>
+                    </div>
                 </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -155,14 +163,14 @@ PANEL_HTML = """
                 </div>
                 <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex flex-col gap-1">
                     <span class="text-slate-500 font-semibold uppercase text-[10px]">Powiązany HWID (Sprzęt)</span>
-                    <span class="text-slate-300 font-mono truncate" x-text="userData.hwid || 'Brak (przypisze się przy starcie)'"></span>
+                    <span class="text-slate-300 font-mono truncate" x-text="userData.hwid || 'Brak (przypisze się automatycznie)'"></span>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- PANEL ADMINISTRACYJNY -->
-    <div x-show="isLoggedIn && userData.role !== 'Klient'" class="w-full max-w-5xl flex flex-col gap-5 my-auto" style="display: none;" :style="(isLoggedIn && userData.role !== 'Klient') ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn && userData.role !== 'Klient'" x-cloak class="w-full max-w-5xl flex flex-col gap-5 my-auto">
         <header class="flex items-center justify-between border-b border-slate-800 pb-4 gap-2">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold shrink-0">⚡</div>
@@ -174,24 +182,45 @@ PANEL_HTML = """
                     <p class="text-xs text-slate-400 truncate">Zalogowany: <b class="text-slate-200" x-text="form.username"></b></p>
                 </div>
             </div>
-            <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all shrink-0">Wyloguj</button>
+            <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all cursor-pointer">Wyloguj</button>
         </header>
+
+        <!-- STATYSTYKI DASHBOARDU -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex flex-col gap-1">
+                <span class="text-[10px] font-semibold text-slate-500 uppercase">Wszystkie Klucze</span>
+                <span class="text-lg font-bold text-white" x-text="Object.keys(keysList).length"></span>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex flex-col gap-1">
+                <span class="text-[10px] font-semibold text-emerald-500/80 uppercase">Aktywne</span>
+                <span class="text-lg font-bold text-emerald-400" x-text="Object.values(keysList).filter(k => k.status === 'Aktywny').length"></span>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex flex-col gap-1">
+                <span class="text-[10px] font-semibold text-amber-500/80 uppercase">Wstrzymane</span>
+                <span class="text-lg font-bold text-amber-400" x-text="Object.values(keysList).filter(k => k.status === 'Wstrzymany').length"></span>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex flex-col gap-1">
+                <span class="text-[10px] font-semibold text-rose-500/80 uppercase">Wygasłe / Anulowane</span>
+                <span class="text-lg font-bold text-rose-400" x-text="Object.values(keysList).filter(k => k.status === 'Wygasł' || k.status === 'Anulowany').length"></span>
+            </div>
+        </div>
 
         <!-- Zakładki -->
         <div class="flex gap-1.5 border-b border-slate-800 pb-3 overflow-x-auto no-scrollbar">
-            <button @click="activeTab = 'keys'" :class="activeTab === 'keys' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">🔑 Klucze</button>
-            <button @click="activeTab = 'create'" :class="activeTab === 'create' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">➕ Nowy Klucz</button>
-            <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">📜 Historia</button>
-            <button @click="activeTab = 'admins'" :class="activeTab === 'admins' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">🛡️ Zespół</button>
+            <button @click="activeTab = 'keys'" :class="activeTab === 'keys' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shrink-0">🔑 Klucze</button>
+            <button @click="activeTab = 'create'" :class="activeTab === 'create' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shrink-0">➕ Nowy Klucz</button>
+            <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shrink-0">📜 Historia</button>
+            <button @click="activeTab = 'admins'" :class="activeTab === 'admins' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all cursor-pointer shrink-0">🛡️ Zespół</button>
         </div>
+
         <!-- 1. Baza Kluczy -->
         <div x-show="activeTab === 'keys'" class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zarządzanie kluczami i subskrypcjami</h2>
                 <div class="flex gap-2 flex-wrap w-full sm:w-auto">
-                    <button @click="loadData()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <button @click="downloadBackup()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center justify-center gap-1">📥 Pobierz</button>
-                    <button @click="triggerUpload()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all flex items-center justify-center gap-1">📤 Wgraj</button>
+                    <button @click="loadData()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all cursor-pointer">Odśwież</button>
+                    <button @click="downloadBackup()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center justify-center gap-1 cursor-pointer">📥 Pobierz</button>
+                    <button @click="triggerUpload()" class="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all flex items-center justify-center gap-1 cursor-pointer">📤 Wgraj</button>
                     <input type="file" id="backupFile" @change="uploadBackup($event)" class="hidden" accept=".json">
                 </div>
             </div>
@@ -213,9 +242,12 @@ PANEL_HTML = """
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex flex-col gap-1">
-                                <span class="text-[10px] font-semibold text-slate-500 uppercase">Klucz licencyjny</span>
-                                <span class="font-mono text-brand-400 font-bold break-all" x-text="data.key"></span>
+                            <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex items-center justify-between gap-2">
+                                <div class="flex flex-col gap-0.5 truncate">
+                                    <span class="text-[10px] font-semibold text-slate-500 uppercase">Klucz licencyjny</span>
+                                    <span class="font-mono text-brand-400 font-bold truncate" x-text="data.key"></span>
+                                </div>
+                                <button @click="copyToClipboard(data.key)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] shrink-0 cursor-pointer">📋</button>
                             </div>
                             <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex flex-col gap-1">
                                 <span class="text-[10px] font-semibold text-slate-500 uppercase">Ważność (Wygasa)</span>
@@ -225,7 +257,7 @@ PANEL_HTML = """
 
                         <div class="flex items-center justify-between text-xs bg-slate-900/30 px-2.5 py-1.5 rounded-lg border border-slate-800/40">
                             <span class="text-slate-500 text-[10px] uppercase font-semibold">HWID (Sprzęt):</span>
-                            <span class="font-mono text-slate-300 truncate max-w-[200px]" x-text="data.hwid || 'Brak przypisania'"></span>
+                            <span class="font-mono text-slate-300 truncate max-w-[220px]" x-text="data.hwid || 'Brak przypisania'"></span>
                         </div>
 
                         <div class="flex flex-col gap-1" x-show="data.notes">
@@ -235,13 +267,13 @@ PANEL_HTML = """
 
                         <!-- Przyciski akcji -->
                         <div class="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-800/60 flex-wrap">
-                            <button @click="resetHwid(username)" class="px-2.5 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded-lg text-[11px] font-medium">Reset HWID</button>
-                            <button @click="openEdit(username, data)" class="px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-lg text-[11px] font-medium">Edytuj</button>
-                            <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded-lg text-[11px] font-medium">Aktywuj</button>
-                            <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded-lg text-[11px] font-medium">Wstrzymaj</button>
-                            <button x-show="data.status !== 'Anulowany'" @click="changeStatus(username, 'Anulowany')" class="px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg text-[11px] font-medium">Anuluj</button>
-                            <template x-if="form.username === 'maxikk'">
-                                <button @click="deleteKey(username)" class="px-2.5 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-[11px] font-bold">Usuń</button>
+                            <button @click="resetHwid(username)" class="px-2.5 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded-lg text-[11px] font-medium cursor-pointer">Reset HWID</button>
+                            <button @click="openEdit(username, data)" class="px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-lg text-[11px] font-medium cursor-pointer">Edytuj</button>
+                            <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded-lg text-[11px] font-medium cursor-pointer">Aktywuj</button>
+                            <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded-lg text-[11px] font-medium cursor-pointer">Wstrzymaj</button>
+                            <button x-show="data.status !== 'Anulowany'" @click="changeStatus(username, 'Anulowany')" class="px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg text-[11px] font-medium cursor-pointer">Anuluj</button>
+                            <template x-if="form.username.toLowerCase() === 'maxikk'">
+                                <button @click="deleteKey(username)" class="px-2.5 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-[11px] font-bold cursor-pointer">Usuń</button>
                             </template>
                         </div>
                     </div>
@@ -250,7 +282,7 @@ PANEL_HTML = """
         </div>
 
         <!-- MODAL EDYCJI KLUCZA -->
-        <div x-show="showEditModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" style="display: none;">
+        <div x-show="showEditModal" x-cloak class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 my-auto">
                 <h3 class="text-sm font-bold text-white uppercase tracking-wider">Edycja Klucza / Klienta</h3>
                 <form @submit.prevent="updateKey()" class="flex flex-col gap-3">
@@ -275,14 +307,15 @@ PANEL_HTML = """
                         <input type="text" x-model="editForm.notes" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex gap-2 mt-3">
-                        <button type="submit" class="flex-1 py-3 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all">Zapisz</button>
-                        <button type="button" @click="showEditModal = false" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition-all">Anuluj</button>
+                        <button type="submit" class="flex-1 py-3 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer">Zapisz</button>
+                        <button type="button" @click="showEditModal = false" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition-all cursor-pointer">Anuluj</button>
                     </div>
                 </form>
             </div>
         </div>
+
         <!-- 2. Utwórz Klucz -->
-        <div x-show="activeTab === 'create'" class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4 max-w-lg mx-auto w-full">
+        <div x-show="activeTab === 'create'" x-cloak class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4 max-w-lg mx-auto w-full">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Generator Kluczy i Subskrypcji</h2>
             <form @submit.prevent="createKey()" class="flex flex-col gap-4">
                 <div class="flex flex-col gap-1.5">
@@ -300,7 +333,7 @@ PANEL_HTML = """
                     <div class="flex gap-2">
                         <input type="text" x-model="newKeyForm.key" placeholder="XXXX-XXXX-XXXX-XXXX"
                             class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono text-brand-400 focus:outline-none focus:border-brand-500 uppercase">
-                        <button type="button" @click="generateKeyString()" class="px-3 bg-slate-800 hover:bg-slate-700 text-xs rounded-xl border border-slate-700 shrink-0">🎲 Losuj</button>
+                        <button type="button" @click="generateKeyString()" class="px-3 bg-slate-800 hover:bg-slate-700 text-xs rounded-xl border border-slate-700 shrink-0 cursor-pointer">🎲 Losuj</button>
                     </div>
                 </div>
                 <div class="flex flex-col gap-1.5">
@@ -313,13 +346,13 @@ PANEL_HTML = """
                     <input type="text" x-model="newKeyForm.notes" placeholder=""
                         class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
-                <div x-show="createMessage" class="text-xs px-3 py-2.5 rounded-xl text-center" :class="createSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'" x-text="createMessage"></div>
-                <button type="submit" class="py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all">Utwórz Klucz</button>
+                <div x-show="createMessage" x-cloak class="text-xs px-3 py-2.5 rounded-xl text-center" :class="createSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'" x-text="createMessage"></div>
+                <button type="submit" class="py-3.5 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer">Utwórz Klucz</button>
             </form>
         </div>
 
         <!-- 3. Historia Logowań -->
-        <div x-show="activeTab === 'history'" class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+        <div x-show="activeTab === 'history'" x-cloak class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historia logowań</h2>
             <div class="flex flex-col gap-2">
                 <template x-for="item in historyList" :key="item.id">
@@ -335,7 +368,7 @@ PANEL_HTML = """
         </div>
 
         <!-- 4. Zespół i Admini -->
-        <div x-show="activeTab === 'admins'" class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+        <div x-show="activeTab === 'admins'" x-cloak class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lista zespołu administracyjnego</h2>
             <div class="flex flex-col gap-2">
                 <template x-for="user in adminsList" :key="user.username">
@@ -351,14 +384,21 @@ PANEL_HTML = """
         </div>
     </div>
 
+    <!-- POWIADOMIENIE O SKOPIOWANIU -->
+    <div x-show="toastMessage" x-cloak x-transition class="fixed bottom-6 right-6 bg-brand-500 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-2xl z-50 flex items-center gap-2">
+        <span>⚡</span> <span x-text="toastMessage"></span>
+    </div>
+
     <script>
         function app() {
             return {
                 isLoggedIn: false,
+                loading: false,
                 activeTab: 'keys',
                 form: { username: '', password: '' },
                 userData: {},
                 message: '',
+                toastMessage: '',
                 keysList: {},
                 historyList: [],
                 adminsList: [],
@@ -370,6 +410,7 @@ PANEL_HTML = """
 
                 async login() {
                     this.message = '';
+                    this.loading = true;
                     let hwid = localStorage.getItem('mint_hwid');
                     if(!hwid) {
                         hwid = 'HWID-' + Math.random().toString(36).substring(2, 10).toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -394,6 +435,8 @@ PANEL_HTML = """
                         }
                     } catch(e) {
                         this.message = 'Błąd połączenia z serwerem.';
+                    } finally {
+                        this.loading = false;
                     }
                 },
 
@@ -453,6 +496,7 @@ PANEL_HTML = """
                     };
                     this.showEditModal = true;
                 },
+
                 async updateKey() {
                     try {
                         let res = await fetch('/api/keys/edit', {
@@ -496,7 +540,7 @@ PANEL_HTML = """
                         });
                         let data = await res.json();
                         if (data.status === 'success') {
-                            alert('HWID został zresetowany.');
+                            this.showToast('HWID został zresetowany pomyślnie!');
                             this.loadData();
                         } else {
                             alert(data.error || 'Błąd resetowania.');
@@ -535,7 +579,7 @@ PANEL_HTML = """
                             let url = window.URL.createObjectURL(blob);
                             let a = document.createElement('a');
                             a.href = url;
-                            a.download = 'mint_backup.json';
+                            a.download = 'mint_server_backup.json';
                             a.click();
                         } else {
                             let err = await res.json();
@@ -575,6 +619,16 @@ PANEL_HTML = """
                     event.target.value = '';
                 },
 
+                copyToClipboard(text) {
+                    navigator.clipboard.writeText(text);
+                    this.showToast('Skopiowano do schowka!');
+                },
+
+                showToast(text) {
+                    this.toastMessage = text;
+                    setTimeout(() => { this.toastMessage = ''; }, 3000);
+                },
+
                 logout() {
                     this.isLoggedIn = false;
                     this.form = { username: '', password: '' };
@@ -603,8 +657,8 @@ def verify_license():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Sprawdzenie administratorów
-    cursor.execute("SELECT username, password_hash, role, package, rank FROM admins WHERE username = ?", (login_input,))
+    # Sprawdzenie administratorów (Case-insensitive)
+    cursor.execute("SELECT username, password_hash, role, package, rank FROM admins WHERE username COLLATE NOCASE = ?", (login_input,))
     admin = cursor.fetchone()
     if admin and check_password_hash(admin[1], password):
         cursor.execute("INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
@@ -614,8 +668,8 @@ def verify_license():
         session['user'] = admin[0]
         return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
 
-    # Sprawdzenie klientów (TYLKO po loginie i hasle)
-    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?", (login_input,))
+    # Sprawdzenie klientów (Case-insensitive)
+    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username COLLATE NOCASE = ?", (login_input,))
     client = cursor.fetchone()
 
     if client:
@@ -681,12 +735,12 @@ def create_key():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT username FROM admins WHERE username = ?", (username,))
+    cursor.execute("SELECT username FROM admins WHERE username COLLATE NOCASE = ?", (username,))
     if cursor.fetchone():
         conn.close()
         return jsonify({"status": "error", "error": "Nazwa zajęta przez admina."}), 400
 
-    cursor.execute("SELECT username FROM keys_db WHERE username = ?", (username,))
+    cursor.execute("SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?", (username,))
     if cursor.fetchone():
         conn.close()
         return jsonify({"status": "error", "error": "Taki klient już istnieje."}), 400
@@ -730,8 +784,8 @@ def edit_key():
 
     pwd_hash = generate_password_hash(password) if password else row[0]
 
-    if old_username != new_username:
-        cursor.execute("SELECT username FROM keys_db WHERE username = ?", (new_username,))
+    if old_username.lower() != new_username.lower():
+        cursor.execute("SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?", (new_username,))
         if cursor.fetchone():
             conn.close()
             return jsonify({"status": "error", "error": "Nazwa użytkownika już istnieje."}), 400
@@ -743,7 +797,7 @@ def edit_key():
 
     cursor.execute(
         "UPDATE keys_db SET username = ?, password_hash = ?, key = ?, expires_at = ?, notes = ? WHERE username = ?",
-        (new_username, pwd_hash, key, expires_at if expires_at else None, notes, old_username if old_username == new_username else new_username)
+        (new_username, pwd_hash, key, expires_at if expires_at else None, notes, old_username if old_username.lower() == new_username.lower() else new_username)
     )
     conn.commit()
     conn.close()
@@ -783,7 +837,7 @@ def delete_key():
     admin_username = data.get("admin_username")
     username_to_delete = data.get("username")
 
-    if admin_username != "maxikk":
+    if admin_username.lower() != "maxikk":
         return jsonify({"status": "error", "error": "Brak uprawnień właścicielskich."}), 403
 
     conn = sqlite3.connect(DB_NAME)
@@ -876,7 +930,7 @@ def get_admin_data():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT rank FROM admins WHERE username = ?", (current_username,))
+    cursor.execute("SELECT rank FROM admins WHERE username COLLATE NOCASE = ?", (current_username,))
     res = cursor.fetchone()
     current_rank = res[0] if res else 0
 
