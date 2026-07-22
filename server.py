@@ -74,9 +74,6 @@ def init_db():
         "INSERT INTO admins VALUES (?, ?, ?, ?, ?)", default_admins
     )
 
-  # Usunięto automatyczne tworzenie "klient_testowy",
-  # aby aktualizacje nie ingerowały w Twoją bazę klientów.
-
   conn.commit()
   conn.close()
 
@@ -907,31 +904,13 @@ def edit_key():
           }),
           400,
       )
-    cursor.execute("DELETE FROM keys_db WHERE username = ?", (old_username,))
-    cursor.execute(
-        "INSERT INTO keys_db (username, password_hash, password_plain, key,"
-        " notes, status, created_at, expires_at, hwid) SELECT ?, ?, ?, key,"
-        " notes, status, created_at, expires_at, hwid FROM keys_db WHERE"
-        " username = ?",
-        (new_username, pwd_hash, pwd_plain, old_username),
-    )
 
+  expires_val = expires_at if expires_at else None
   cursor.execute(
-      "UPDATE keys_db SET username = ?, password_hash = ?, password_plain = ?,"
-      " key = ?, expires_at = ?, notes = ? WHERE username = ?",
-      (
-          new_username,
-          pwd_hash,
-          pwd_plain,
-          key,
-          expires_at if expires_at else None,
-          notes,
-          (
-              old_username
-              if old_username.lower() == new_username.lower()
-              else new_username
-          ),
-      ),
+      """UPDATE keys_db 
+         SET username = ?, password_hash = ?, password_plain = ?, key = ?, expires_at = ?, notes = ? 
+         WHERE username = ?""",
+      (new_username, pwd_hash, pwd_plain, key, expires_val, notes, old_username)
   )
   conn.commit()
   conn.close()
