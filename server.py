@@ -187,8 +187,8 @@ PANEL_HTML = """
                     <div class="flex items-center gap-2">
                         <button @click="copyToClipboard(userData.key)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all">📋 Kopiuj</button>
                         <span class="text-[10px] px-2.5 py-1 rounded-lg font-semibold"
-                              :class="userData.status === 'Aktywny' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'"
-                              x-text="userData.status"></span>
+                              :class="userData.account_status === 'Aktywny' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'"
+                              x-text="userData.account_status"></span>
                     </div>
                 </div>
             </div>
@@ -319,7 +319,9 @@ PANEL_HTML = """
                     </div>
                 </template>
             </div>
-        </div><!-- MODAL EDYCJI KLUCZA -->
+        </div>
+
+        <!-- MODAL EDYCJI KLUCZA -->
         <div x-show="showEditModal" x-cloak class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 my-auto">
                 <h3 class="text-sm font-bold text-white uppercase tracking-wider">Edycja Klucza / Klienta</h3>
@@ -801,7 +803,7 @@ def verify_license():
         "package": "PRO",
         "role": "Klient",
         "key": c_key,
-        "status": c_status,
+        "account_status": c_status,
         "notes": c_notes,
         "expires_at": c_expires,
         "hwid": c_hwid,
