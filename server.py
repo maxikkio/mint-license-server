@@ -199,7 +199,7 @@ PANEL_HTML = """
                 </div>
                 <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex flex-col gap-1">
                     <span class="text-slate-500 font-semibold uppercase text-[10px]">Powiązany HWID (Sprzęt)</span>
-                    <span class="text-slate-300 font-mono truncate" x-text="userData.hwid || 'Brak (przypisze się automatycznie)'"></span>
+                    <span class="text-slate-300 font-mono truncate" x-text="userData.hwid || 'Brak (przypisze się z aplikacji)'"></span>
                 </div>
             </div>
         </div>
@@ -451,17 +451,12 @@ PANEL_HTML = """
                 async login() {
                     this.message = '';
                     this.loading = true;
-                    let hwid = localStorage.getItem('mint_hwid');
-                    if(!hwid) {
-                        hwid = 'HWID-' + Math.random().toString(36).substring(2, 10).toUpperCase() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-                        localStorage.setItem('mint_hwid', hwid);
-                    }
 
                     try {
                         let res = await fetch('/api/verify', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({...this.form, hwid: hwid})
+                            body: JSON.stringify({...this.form, hwid: ""})
                         });
                         let data = await res.json();
                         if (data.status === 'valid') {
