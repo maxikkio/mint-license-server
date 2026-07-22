@@ -74,25 +74,9 @@ def init_db():
         "INSERT INTO admins VALUES (?, ?, ?, ?, ?)", default_admins
     )
 
-  cursor.execute("SELECT COUNT(*) FROM keys_db")
-  if cursor.fetchone()[0] == 0:
-    exp_date = (datetime.now() + timedelta(days=30)).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-    cursor.execute(
-        "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            "klient_testowy",
-            generate_password_hash("haslo123"),
-            "haslo123",
-            "ABCD-1234-EFGH-5678",
-            "Pierwszy klient testowy",
-            "Aktywny",
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            exp_date,
-            "",
-        ),
-    )
+  # Usunięto automatyczne tworzenie "klient_testowy",
+  # aby aktualizacje nie ingerowały w Twoją bazę klientów.
+
   conn.commit()
   conn.close()
 
