@@ -169,7 +169,6 @@ PANEL_HTML = """
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
                 <div class="flex gap-2">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <!-- Backup zabezpieczony hasłem (pytanie przez prompt bez jawnego pokazywania hasła) -->
                     <div class="flex gap-2">
                         <button @click="downloadBackup()" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center cursor-pointer">📥 Pobierz Backup</button>
                         <button @click="triggerUpload()" class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">📤 Wgraj Backup</button>
@@ -205,9 +204,9 @@ PANEL_HTML = """
                                 </td>
                                 <td class="py-3 px-3 text-slate-400" x-text="data.notes || '-'"></td>
                                 <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
-                                    <button @click="changeStatus(username, 'Aktywny')" class="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded text-[10px]">Aktywuj</button>
-                                    <button @click="changeStatus(username, 'Wstrzymany')" class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded text-[10px]">Wstrzymaj</button>
-                                    <button @click="changeStatus(username, 'Anulowany')" class="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded text-[10px]">Anuluj</button>
+                                    <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded text-[10px]">Aktywuj</button>
+                                    <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded text-[10px]">Wstrzymaj</button>
+                                    <button x-show="data.status !== 'Anulowany'" @click="changeStatus(username, 'Anulowany')" class="px-2 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded text-[10px]">Anuluj</button>
                                     <template x-if="form.username === 'maxikk'">
                                         <button @click="deleteKey(username)" class="px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-[10px] font-bold">Usuń</button>
                                     </template>
