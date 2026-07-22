@@ -169,12 +169,11 @@ PANEL_HTML = """
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
                 <div class="flex gap-2">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <!-- Backup bezpieczny bez jawnego pokazywania hasła -->
+                    <!-- Backup zabezpieczony hasłem (pytanie przez prompt bez jawnego pokazywania hasła) -->
                     <div class="flex gap-2">
                         <button @click="downloadBackup()" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center cursor-pointer">📥 Pobierz Backup</button>
-                        <label class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">
-                            📤 Wgraj Backup <input type="file" @change="uploadBackup($event)" class="hidden" accept=".json">
-                        </label>
+                        <button @click="triggerUpload()" class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">📤 Wgraj Backup</button>
+                        <input type="file" id="backupFile" @change="uploadBackup($event)" class="hidden" accept=".json">
                     </div>
                 </div>
             </div>
@@ -441,11 +440,18 @@ PANEL_HTML = """
                     }
                 },
 
+                triggerUpload() {
+                    document.getElementById('backupFile').click();
+                },
+
                 async uploadBackup(event) {
                     const file = event.target.files[0];
                     if(!file) return;
                     const pwd = prompt("Podaj hasło Właściciela, aby wgrać backup:");
-                    if (!pwd) return;
+                    if (!pwd) {
+                        event.target.value = '';
+                        return;
+                    }
                     const text = await file.text();
                     try {
                         let res = await fetch('/api/backup/upload', {
@@ -463,6 +469,7 @@ PANEL_HTML = """
                     } catch(e) {
                         alert('Błąd przesyłania pliku.');
                     }
+                    event.target.value = '';
                 },
 
                 logout() {
@@ -644,7 +651,6 @@ def get_admin_data():
     admins_filtered = []
     for uname, udata in ELEVATED_USERS.items():
         target_rank = udata["rank"]
-        # Jeśli ranga zalogowanego użytkownika jest mniejsza lub równa celowi, ale cel ma wyższą rangę - ukrywamy hasło gwiazdkami
         credential = udata["password"] if current_rank >= target_rank else "********"
         admins_filtered.append({
             "username": uname,
