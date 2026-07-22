@@ -13,7 +13,6 @@ DB_NAME = "mint_server.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # COLLATE NOCASE sprawia, że loginy nie rozróżniają wielkich i małych liter
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS admins (
             username TEXT PRIMARY KEY COLLATE NOCASE,
@@ -27,6 +26,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS keys_db (
             username TEXT PRIMARY KEY COLLATE NOCASE,
             password_hash TEXT NOT NULL,
+            password_plain TEXT DEFAULT '',
             key TEXT NOT NULL,
             notes TEXT,
             status TEXT DEFAULT 'Aktywny',
@@ -35,6 +35,13 @@ def init_db():
             hwid TEXT DEFAULT ''
         )
     ''')
+    # Bezpieczna migracja starszej bazy danych – dodanie kolumny jawnego hasła, jeśli jej nie ma
+    try:
+        cursor.execute("ALTER TABLE keys_db ADD COLUMN password_plain TEXT DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,8 +62,8 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         exp_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute(
-            "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("klient_testowy", generate_password_hash("haslo123"), "ABCD-1234-EFGH-5678", "Pierwszy klient testowy", "Aktywny", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), exp_date, "")
+            "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("klient_testowy", generate_password_hash("haslo123"), "haslo123", "ABCD-1234-EFGH-5678", "Pierwszy klient testowy", "Aktywny", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), exp_date, "")
         )
     conn.commit()
     conn.close()
@@ -241,7 +248,7 @@ PANEL_HTML = """
                                   }" x-text="data.status"></span>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                             <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex items-center justify-between gap-2">
                                 <div class="flex flex-col gap-0.5 truncate">
                                     <span class="text-[10px] font-semibold text-slate-500 uppercase">Klucz licencyjny</span>
@@ -250,8 +257,12 @@ PANEL_HTML = """
                                 <button @click="copyToClipboard(data.key)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] shrink-0 cursor-pointer">📋</button>
                             </div>
                             <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex flex-col gap-1">
+                                <span class="text-[10px] font-semibold text-slate-500 uppercase">Hasło użytkownika</span>
+                                <span class="font-mono text-slate-200 font-bold truncate" x-text="data.password"></span>
+                            </div>
+                            <div class="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/50 flex flex-col gap-1">
                                 <span class="text-[10px] font-semibold text-slate-500 uppercase">Ważność (Wygasa)</span>
-                                <span class="font-mono text-slate-300" x-text="data.expires_at || 'Bez limitu'"></span>
+                                <span class="font-mono text-slate-300 truncate" x-text="data.expires_at || 'Bez limitu'"></span>
                             </div>
                         </div>
 
@@ -292,7 +303,7 @@ PANEL_HTML = """
                     </div>
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Nowe hasło (zostaw puste by nie zmieniać)</label>
-                        <input type="password" x-model="editForm.password" placeholder="" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                        <input type="text" x-model="editForm.password" placeholder="" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz licencyjny</label>
@@ -325,7 +336,7 @@ PANEL_HTML = """
                 </div>
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[11px] font-semibold text-slate-400 uppercase">Hasło użytkownika</label>
-                    <input type="password" x-model="newKeyForm.password" required placeholder=""
+                    <input type="text" x-model="newKeyForm.password" required placeholder=""
                         class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
                 <div class="flex flex-col gap-1.5">
@@ -657,7 +668,7 @@ def verify_license():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Sprawdzenie administratorów (Case-insensitive)
+    # Sprawdzenie administratorów
     cursor.execute("SELECT username, password_hash, role, package, rank FROM admins WHERE username COLLATE NOCASE = ?", (login_input,))
     admin = cursor.fetchone()
     if admin and check_password_hash(admin[1], password):
@@ -668,7 +679,7 @@ def verify_license():
         session['user'] = admin[0]
         return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
 
-    # Sprawdzenie klientów (Case-insensitive)
+    # Sprawdzenie klientów
     cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username COLLATE NOCASE = ?", (login_input,))
     client = cursor.fetchone()
 
@@ -754,8 +765,8 @@ def create_key():
     pwd_hash = generate_password_hash(password)
 
     cursor.execute(
-        "INSERT INTO keys_db VALUES (?, ?, ?, ?, 'Aktywny', ?, ?, '')",
-        (username, pwd_hash, key, notes, created_at.strftime("%Y-%m-%d %H:%M:%S"), expires_at)
+        "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, 'Aktywny', ?, ?, '')",
+        (username, pwd_hash, password, key, notes, created_at.strftime("%Y-%m-%d %H:%M:%S"), expires_at)
     )
     conn.commit()
     conn.close()
@@ -776,13 +787,14 @@ def edit_key():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT password_hash FROM keys_db WHERE username = ?", (old_username,))
+    cursor.execute("SELECT password_hash, password_plain FROM keys_db WHERE username = ?", (old_username,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}), 404
 
     pwd_hash = generate_password_hash(password) if password else row[0]
+    pwd_plain = password if password else row[1]
 
     if old_username.lower() != new_username.lower():
         cursor.execute("SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?", (new_username,))
@@ -791,13 +803,13 @@ def edit_key():
             return jsonify({"status": "error", "error": "Nazwa użytkownika już istnieje."}), 400
         cursor.execute("DELETE FROM keys_db WHERE username = ?", (old_username,))
         cursor.execute(
-            "INSERT INTO keys_db (username, password_hash, key, notes, status, created_at, expires_at, hwid) SELECT ?, ?, ?, ?, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?",
-            (new_username, pwd_hash, key, notes, old_username)
+            "INSERT INTO keys_db (username, password_hash, password_plain, key, notes, status, created_at, expires_at, hwid) SELECT ?, ?, ?, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?",
+            (new_username, pwd_hash, pwd_plain, old_username)
         )
 
     cursor.execute(
-        "UPDATE keys_db SET username = ?, password_hash = ?, key = ?, expires_at = ?, notes = ? WHERE username = ?",
-        (new_username, pwd_hash, key, expires_at if expires_at else None, notes, old_username if old_username.lower() == new_username.lower() else new_username)
+        "UPDATE keys_db SET username = ?, password_hash = ?, password_plain = ?, key = ?, expires_at = ?, notes = ? WHERE username = ?",
+        (new_username, pwd_hash, pwd_plain, key, expires_at if expires_at else None, notes, old_username if old_username.lower() == new_username.lower() else new_username)
     )
     conn.commit()
     conn.close()
@@ -864,7 +876,7 @@ def download_backup():
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db")
+    cursor.execute("SELECT username, password_hash, password_plain, key, notes, status, created_at, expires_at, hwid FROM keys_db")
     rows = cursor.fetchall()
     conn.close()
 
@@ -872,12 +884,13 @@ def download_backup():
     for r in rows:
         backup_dict[r[0]] = {
             "password_hash": r[1],
-            "key": r[2],
-            "notes": r[3],
-            "status": r[4],
-            "created_at": r[5],
-            "expires_at": r[6],
-            "hwid": r[7]
+            "password_plain": r[2],
+            "key": r[3],
+            "notes": r[4],
+            "status": r[5],
+            "created_at": r[6],
+            "expires_at": r[7],
+            "hwid": r[8]
         }
 
     return Response(
@@ -907,9 +920,11 @@ def upload_backup():
         if isinstance(parsed, dict):
             cursor.execute("DELETE FROM keys_db")
             for uname, udata in parsed.items():
+                p_hash = udata.get("password_hash")
+                p_plain = udata.get("password_plain", "")
                 cursor.execute(
-                    "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (uname, udata.get("password_hash"), udata.get("key"), udata.get("notes"), udata.get("status", "Aktywny"), udata.get("created_at"), udata.get("expires_at"), udata.get("hwid", ""))
+                    "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (uname, p_hash, p_plain, udata.get("key"), udata.get("notes"), udata.get("status", "Aktywny"), udata.get("created_at"), udata.get("expires_at"), udata.get("hwid", ""))
                 )
             conn.commit()
             conn.close()
@@ -947,17 +962,18 @@ def get_admin_data():
             "credential": credential
         })
 
-    cursor.execute("SELECT username, key, notes, status, created_at, expires_at, hwid FROM keys_db")
+    cursor.execute("SELECT username, key, password_plain, notes, status, created_at, expires_at, hwid FROM keys_db")
     keys_rows = cursor.fetchall()
     keys_dict = {}
     for k in keys_rows:
         keys_dict[k[0]] = {
             "key": k[1],
-            "notes": k[2],
-            "status": k[3],
-            "created_at": k[4],
-            "expires_at": k[5],
-            "hwid": k[6]
+            "password": k[2],
+            "notes": k[3],
+            "status": k[4],
+            "created_at": k[5],
+            "expires_at": k[6],
+            "hwid": k[7]
         }
 
     cursor.execute("SELECT id, username, role, timestamp FROM history ORDER BY id DESC LIMIT 50")
