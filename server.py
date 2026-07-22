@@ -614,7 +614,7 @@ def verify_license():
         session['user'] = admin[0]
         return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
 
-    # Sprawdzenie klientów (TYLKO po loginie, bez sprawdzania klucza)
+    # Sprawdzenie klientów (TYLKO po loginie i hasle)
     cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?", (login_input,))
     client = cursor.fetchone()
 
