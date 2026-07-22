@@ -37,6 +37,7 @@ PANEL_HTML = """
 <html lang="pl" class="dark">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mint Server - Panel Zarządzania i Klienta</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -55,10 +56,10 @@ PANEL_HTML = """
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
     </style>
 </head>
-<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white" x-data="app()">
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-brand-500 selection:text-white" x-data="app()">
 
     <!-- EKRAN LOGOWANIA -->
-    <div x-show="!isLoggedIn" class="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
+    <div x-show="!isLoggedIn" class="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl flex flex-col gap-6">
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
             <h1 class="text-lg font-bold text-white tracking-tight">Logowanie do Systemu</h1>
@@ -92,7 +93,7 @@ PANEL_HTML = """
     </div>
 
     <!-- PANEL KLIENTA -->
-    <div x-show="isLoggedIn && userData.role === 'Klient'" class="max-w-2xl w-full flex flex-col gap-6" style="display: none;" :style="(isLoggedIn && userData.role === 'Klient') ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn && userData.role === 'Klient'" class="w-full max-w-2xl flex flex-col gap-6" style="display: none;" :style="(isLoggedIn && userData.role === 'Klient') ? 'display: flex;' : 'display: none;'">
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
@@ -131,7 +132,7 @@ PANEL_HTML = """
     </div>
 
     <!-- PANEL ADMINISTRACYJNY -->
-    <div x-show="isLoggedIn && userData.role !== 'Klient'" class="max-w-5xl w-full flex flex-col gap-6" style="display: none;" :style="(isLoggedIn && userData.role !== 'Klient') ? 'display: flex;' : 'display: none;'">
+    <div x-show="isLoggedIn && userData.role !== 'Klient'" class="w-full max-w-5xl flex flex-col gap-6" style="display: none;" :style="(isLoggedIn && userData.role !== 'Klient') ? 'display: flex;' : 'display: none;'">
         <header class="flex items-center justify-between border-b border-slate-800 pb-4">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 font-bold">⚡</div>
@@ -157,7 +158,7 @@ PANEL_HTML = """
         <div x-show="activeTab === 'keys'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between flex-wrap gap-2">
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
                     <div class="flex gap-2">
                         <button @click="downloadBackup()" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center cursor-pointer">📥 Pobierz Backup</button>
@@ -167,7 +168,7 @@ PANEL_HTML = """
                 </div>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                         <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
                             <th class="py-3 px-3">Użytkownik</th>
@@ -193,7 +194,7 @@ PANEL_HTML = """
                                           }" x-text="data.status"></span>
                                 </td>
                                 <td class="py-3 px-3 text-slate-400" x-text="data.notes || '-'"></td>
-                                <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
+                                <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5 flex-wrap">
                                     <button @click="openEdit(username, data)" class="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded text-[10px]">Edytuj</button>
                                     <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded text-[10px]">Aktywuj</button>
                                     <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded text-[10px]">Wstrzymaj</button>
@@ -274,7 +275,7 @@ PANEL_HTML = """
         <div x-show="activeTab === 'history'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historia logowań</h2>
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full text-left border-collapse min-w-[400px]">
                     <thead>
                         <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
                             <th class="py-3 px-3">Użytkownik</th>
@@ -299,7 +300,7 @@ PANEL_HTML = """
         <div x-show="activeTab === 'admins'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lista zespołu</h2>
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full text-left border-collapse min-w-[400px]">
                     <thead>
                         <tr class="border-b border-slate-800 text-[11px] text-slate-500 font-semibold">
                             <th class="py-3 px-3">Użytkownik</th>
