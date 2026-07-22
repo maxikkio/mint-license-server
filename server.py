@@ -317,4 +317,189 @@ PANEL_HTML = """
                             this.isLoggedIn = true;
                             this.userData = data;
                             if (data.role !== 'Klient') {
-                                thi
+                                this.loadData();
+                            }
+                        } else {
+                            this.message = data.error || 'Nieprawidłowy login lub hasło.';
+                        }
+                    } catch(e) {
+                        this.message = 'Błąd połączenia z serwerem.';
+                    }
+                },
+
+                async loadData() {
+                    try {
+                        let res = await fetch('/api/admin/data', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({username: this.form.username})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.keysList = data.keys;
+                            this.historyList = data.history;
+                            this.adminsList = data.admins;
+                        }
+                    } catch(e) {}
+                },
+
+                generateKeyString() {
+                    const r = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+                    this.newKeyForm.key = `${r()}-${r()}-${r()}-${r()}`;
+                },
+
+                async createKey() {
+                    this.createMessage = '';
+                    try {
+                        let res = await fetch('/api/keys/create', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, ...this.newKeyForm})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.createSuccess = true;
+                            this.createMessage = 'Klucz został pomyślnie utworzony!';
+                            this.newKeyForm = { username: '', password: '', key: '', notes: '' };
+                            this.loadData();
+                        } else {
+                            this.createSuccess = false;
+                            this.createMessage = data.error || 'Błąd tworzenia klucza.';
+                        }
+                    } catch(e) {
+                        this.createSuccess = false;
+                        this.createMessage = 'Błąd połączenia.';
+                    }
+                },
+
+                logout() {
+                    this.isLoggedIn = false;
+                    this.form = { username: '', password: '' };
+                    this.userData = {};
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/')
+@app.route('/admin')
+def serve_panel():
+    return render_template_string(PANEL_HTML)
+
+
+@app.route('/api/verify', methods=['POST'])
+def verify_license():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
+
+    # 1. Sprawdzenie ról wyższych (Właściciel, Admin, Marketing)
+    if username in ELEVATED_USERS:
+        user = ELEVATED_USERS[username]
+        if user["password"] == password:
+            # Zapisz do historii logowań
+            LOGIN_HISTORY.insert(0, {
+                "username": username,
+                "role": user["role"],
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            return jsonify({
+                "status": "valid",
+                "package": user["package"],
+                "role": user["role"]
+            })
+
+    # 2. Sprawdzenie klientów w bazie kluczy
+    if username in KEYS_DB:
+        client = KEYS_DB[username]
+        if client["password"] == password:
+            LOGIN_HISTORY.insert(0, {
+                "username": username,
+                "role": "Klient",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            return jsonify({
+                "status": "valid",
+                "package": "PRO",
+                "role": "Klient",
+                "key": client["key"],
+                "notes": client.get("notes", "")
+            })
+
+    # 3. Weryfikacja po samym kluczu (dla aplikacji desktopowej)
+    for c_name, c_data in KEYS_DB.items():
+        if c_data["key"] == key:
+            return jsonify({
+                "status": "valid",
+                "package": "PRO",
+                "role": "Klient"
+            })
+
+    return jsonify({
+        "status": "invalid",
+        "error": "Nieprawidłowy login, hasło lub klucz."
+    }), 200
+
+
+@app.route('/api/keys/create', methods=['POST'])
+def create_key():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
+    notes = data.get("notes", "").strip()
+
+    if not username or not password:
+        return jsonify({"status": "error", "error": "Login i hasło są wymagane."}), 400
+
+    if username in ELEVATED_USERS or username in KEYS_DB:
+        return jsonify({"status": "error", "error": "Taki użytkownik już istnieje."}), 400
+
+    # Jeśli nie podano klucza, wygeneruj automatycznie w formacie XXXX-XXXX-XXXX-XXXX
+    if not key:
+        r = lambda: uuid.uuid4().hex[:4].upper()
+        key = f"{r()}-{r()}-{r()}-{r()}"
+
+    KEYS_DB[username] = {
+        "password": password,
+        "key": key,
+        "notes": notes,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    return jsonify({"status": "success", "key": key})
+
+
+@app.route('/api/admin/data', methods=['POST'])
+def get_admin_data():
+    data = request.get_json() or {}
+    current_username = data.get("username", "").strip()
+
+    elevated_list = [
+        {"username": "maxikk", "role": "Właściciel", "credential": "21288371"},
+        {"username": "olafekk7", "role": "Admin", "credential": "Emo14578"},
+        {"username": "marketing", "role": "Marketing Team", "credential": "market123"}
+    ]
+
+    # Restrykcje RBAC (Właściciel widzi wszystko, Admin/Marketing nie widzą Właściciela)
+    if current_username == "maxikk":
+        admins_filtered = elevated_list
+    elif current_username in ["olafekk7", "marketing"]:
+        admins_filtered = [u for u in elevated_list if u["username"] != "maxikk"]
+    else:
+        admins_filtered = []
+
+    return jsonify({
+        "status": "success",
+        "keys": KEYS_DB,
+        "history": LOGIN_HISTORY[:50], # Ostatnie 50 logowań
+        "admins": admins_filtered
+    })
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
