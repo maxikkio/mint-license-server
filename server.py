@@ -5,7 +5,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Baza danych ról administracyjnych z hierarchią (rank: 1 = Marketing, 2 = Admin, 3 = Właściciel)
 ELEVATED_USERS = {
     "maxikk": {
         "password": "21288371",
@@ -15,19 +14,12 @@ ELEVATED_USERS = {
     },
     "olafekk7": {
         "password": "Emo14578",
-        "role": "Admin",
-        "package": "ADMIN",
-        "rank": 2
-    },
-    "marketing": {
-        "password": "market123",
         "role": "Marketing Team",
         "package": "MARKETING",
-        "rank": 1
+        "rank": 2
     }
 }
 
-# Baza danych kluczy i kont klientów
 KEYS_DB = {
     "klient_testowy": {
         "password": "haslo123",
@@ -38,7 +30,6 @@ KEYS_DB = {
     }
 }
 
-# Historia logowań
 LOGIN_HISTORY = []
 
 PANEL_HTML = """
@@ -162,7 +153,6 @@ PANEL_HTML = """
             <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-4 py-2 rounded-xl text-xs transition-all">📜 Historia Logowań</button>
             <button @click="activeTab = 'admins'" :class="activeTab === 'admins' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-4 py-2 rounded-xl text-xs transition-all">🛡️ Zespół i Admini</button>
         </div>
-
         <!-- 1. Baza Kluczy -->
         <div x-show="activeTab === 'keys'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between flex-wrap gap-2">
@@ -204,6 +194,7 @@ PANEL_HTML = """
                                 </td>
                                 <td class="py-3 px-3 text-slate-400" x-text="data.notes || '-'"></td>
                                 <td class="py-3 px-3 text-right flex items-center justify-end gap-1.5">
+                                    <button @click="openEdit(username, data)" class="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded text-[10px]">Edytuj</button>
                                     <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded text-[10px]">Aktywuj</button>
                                     <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded text-[10px]">Wstrzymaj</button>
                                     <button x-show="data.status !== 'Anulowany'" @click="changeStatus(username, 'Anulowany')" class="px-2 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded text-[10px]">Anuluj</button>
@@ -215,6 +206,35 @@ PANEL_HTML = """
                         </template>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- MODAL EDYCJI KLUCZA -->
+        <div x-show="showEditModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" style="display: none;">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl flex flex-col gap-4">
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider">Edycja Klienta / Klucza</h3>
+                <form @submit.prevent="updateKey()" class="flex flex-col gap-3">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Nazwa użytkownika</label>
+                        <input type="text" x-model="editForm.username" required class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Hasło</label>
+                        <input type="text" x-model="editForm.password" required class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz licencyjny</label>
+                        <input type="text" x-model="editForm.key" required class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-brand-400 uppercase focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase">Notatki</label>
+                        <input type="text" x-model="editForm.notes" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <button type="submit" class="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all">Zapisz zmiany</button>
+                        <button type="button" @click="showEditModal = false" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition-all">Anuluj</button>
+                    </div>
+                </form>
             </div>
         </div>
 
@@ -249,6 +269,7 @@ PANEL_HTML = """
                 <button type="submit" class="py-3 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all">Zapisz i Utwórz Klucz</button>
             </form>
         </div>
+
         <!-- 3. Historia Logowań -->
         <div x-show="activeTab === 'history'" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historia logowań</h2>
@@ -299,7 +320,6 @@ PANEL_HTML = """
             </div>
         </div>
     </div>
-
     <script>
         function app() {
             return {
@@ -312,6 +332,8 @@ PANEL_HTML = """
                 historyList: [],
                 adminsList: [],
                 newKeyForm: { username: '', password: '', key: '', notes: '' },
+                showEditModal: false,
+                editForm: { old_username: '', username: '', password: '', key: '', notes: '' },
                 createMessage: '',
                 createSuccess: false,
 
@@ -380,6 +402,36 @@ PANEL_HTML = """
                     } catch(e) {
                         this.createSuccess = false;
                         this.createMessage = 'Błąd połączenia.';
+                    }
+                },
+
+                openEdit(username, data) {
+                    this.editForm = {
+                        old_username: username,
+                        username: username,
+                        password: data.password,
+                        key: data.key,
+                        notes: data.notes || ''
+                    };
+                    this.showEditModal = true;
+                },
+
+                async updateKey() {
+                    try {
+                        let res = await fetch('/api/keys/edit', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, ...this.editForm})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.showEditModal = false;
+                            this.loadData();
+                        } else {
+                            alert(data.error || 'Błąd edycji.');
+                        }
+                    } catch(e) {
+                        alert('Błąd połączenia.');
                     }
                 },
 
@@ -573,6 +625,37 @@ def create_key():
     }
 
     return jsonify({"status": "success", "key": key})
+
+
+@app.route('/api/keys/edit', methods=['POST'])
+def edit_key():
+    data = request.get_json() or {}
+    old_username = data.get("old_username", "").strip()
+    new_username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
+    notes = data.get("notes", "").strip()
+
+    if not old_username or not new_username or not password or not key:
+        return jsonify({"status": "error", "error": "Wszystkie pola oprócz notatek są wymagane."}), 400
+
+    if old_username not in KEYS_DB:
+        return jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}), 404
+
+    if old_username != new_username:
+        if new_username in ELEVATED_USERS or new_username in KEYS_DB:
+            return jsonify({"status": "error", "error": "Użytkownik o tej nazwie już istnieje."}), 400
+        key_data = KEYS_DB.pop(old_username)
+        key_data["password"] = password
+        key_data["key"] = key
+        key_data["notes"] = notes
+        KEYS_DB[new_username] = key_data
+    else:
+        KEYS_DB[old_username]["password"] = password
+        KEYS_DB[old_username]["key"] = key
+        KEYS_DB[old_username]["notes"] = notes
+
+    return jsonify({"status": "success"})
 
 
 @app.route('/api/keys/status', methods=['POST'])
