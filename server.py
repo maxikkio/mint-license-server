@@ -93,14 +93,14 @@ PANEL_HTML = """
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
             <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">Logowanie do Systemu</h1>
-            <p class="text-xs text-slate-400">Podaj dane lub klucz licencyjny</p>
+            <p class="text-xs text-slate-400">Podaj login i hasło konta</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login lub Klucz</label>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
                 <input type="text" x-model="form.username" required placeholder=""
-                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all uppercase">
+                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -603,6 +603,7 @@ def verify_license():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    # Sprawdzenie administratorów
     cursor.execute("SELECT username, password_hash, role, package, rank FROM admins WHERE username = ?", (login_input,))
     admin = cursor.fetchone()
     if admin and check_password_hash(admin[1], password):
@@ -613,7 +614,8 @@ def verify_license():
         session['user'] = admin[0]
         return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
 
-    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ? OR key = ?", (login_input, login_input.upper()))
+    # Sprawdzenie klientów (TYLKO po loginie, bez sprawdzania klucza)
+    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?", (login_input,))
     client = cursor.fetchone()
 
     if client:
@@ -641,7 +643,7 @@ def verify_license():
             c_hwid = hwid
         elif c_hwid and hwid and c_hwid != hwid:
             conn.close()
-            return jsonify({"status": "invalid", "error": "Klucz jest przypisany do innego urządzenia (HWID mismatch)."}), 200
+            return jsonify({"status": "invalid", "error": "Konto jest przypisane do innego urządzenia (HWID mismatch)."}), 200
 
         cursor.execute("INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
                        (c_username, "Klient", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -661,7 +663,7 @@ def verify_license():
         })
 
     conn.close()
-    return jsonify({"status": "invalid", "error": "Nieprawidłowy login, hasło lub klucz."}), 200
+    return jsonify({"status": "invalid", "error": "Nieprawidłowy login lub hasło."}), 200
 
 
 @app.route('/api/keys/create', methods=['POST'])
