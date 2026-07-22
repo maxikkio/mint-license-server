@@ -1,19 +1,20 @@
+from datetime import datetime, timedelta
+import json
 import sqlite3
 import uuid
-import json
-from flask import Flask, request, jsonify, render_template_string, Response, session
-from datetime import datetime, timedelta
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, Response, jsonify, render_template_string, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.secret_key = uuid.uuid4().hex
 
 DB_NAME = "mint_server.db"
 
+
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
             username TEXT PRIMARY KEY COLLATE NOCASE,
             password_hash TEXT NOT NULL,
@@ -21,8 +22,8 @@ def init_db():
             package TEXT NOT NULL,
             rank INTEGER NOT NULL
         )
-    ''')
-    cursor.execute('''
+    """)
+  cursor.execute("""
         CREATE TABLE IF NOT EXISTS keys_db (
             username TEXT PRIMARY KEY COLLATE NOCASE,
             password_hash TEXT NOT NULL,
@@ -34,39 +35,67 @@ def init_db():
             expires_at TEXT,
             hwid TEXT DEFAULT ''
         )
-    ''')
-    # Bezpieczna migracja starszej bazy danych – dodanie kolumny jawnego hasła, jeśli jej nie ma
-    try:
-        cursor.execute("ALTER TABLE keys_db ADD COLUMN password_plain TEXT DEFAULT ''")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
+    """)
+  try:
+    cursor.execute(
+        "ALTER TABLE keys_db ADD COLUMN password_plain TEXT DEFAULT ''"
+    )
+    conn.commit()
+  except sqlite3.OperationalError:
+    pass
 
-    cursor.execute('''
+  cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
             role TEXT,
             timestamp TEXT
         )
-    ''')
-    cursor.execute("SELECT COUNT(*) FROM admins")
-    if cursor.fetchone()[0] == 0:
-        default_admins = [
-            ("maxikk", generate_password_hash("21288371"), "Właściciel", "WŁAŚCICIEL (OWNER)", 3),
-            ("olafekk7", generate_password_hash("Emo14578"), "Marketing Team", "MARKETING", 2)
-        ]
-        cursor.executemany("INSERT INTO admins VALUES (?, ?, ?, ?, ?)", default_admins)
+    """)
+  cursor.execute("SELECT COUNT(*) FROM admins")
+  if cursor.fetchone()[0] == 0:
+    default_admins = [
+        (
+            "maxikk",
+            generate_password_hash("21288371"),
+            "Właściciel",
+            "WŁAŚCICIEL (OWNER)",
+            3,
+        ),
+        (
+            "olafekk7",
+            generate_password_hash("Emo14578"),
+            "Marketing Team",
+            "MARKETING",
+            2,
+        ),
+    ]
+    cursor.executemany(
+        "INSERT INTO admins VALUES (?, ?, ?, ?, ?)", default_admins
+    )
 
-    cursor.execute("SELECT COUNT(*) FROM keys_db")
-    if cursor.fetchone()[0] == 0:
-        exp_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute(
-            "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("klient_testowy", generate_password_hash("haslo123"), "haslo123", "ABCD-1234-EFGH-5678", "Pierwszy klient testowy", "Aktywny", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), exp_date, "")
-        )
-    conn.commit()
-    conn.close()
+  cursor.execute("SELECT COUNT(*) FROM keys_db")
+  if cursor.fetchone()[0] == 0:
+    exp_date = (datetime.now() + timedelta(days=30)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    cursor.execute(
+        "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "klient_testowy",
+            generate_password_hash("haslo123"),
+            "haslo123",
+            "ABCD-1234-EFGH-5678",
+            "Pierwszy klient testowy",
+            "Aktywny",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            exp_date,
+            "",
+        ),
+    )
+  conn.commit()
+  conn.close()
+
 
 init_db()
 
@@ -110,13 +139,13 @@ PANEL_HTML = """
         <form @submit.prevent="login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
-                <input type="text" x-model="form.username" required placeholder="Wpisz swój login"
+                <input type="text" x-model="form.username" required placeholder=""
                     class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
             <div class="flex flex-col gap-1.5">
                 <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hasło</label>
-                <input type="password" x-model="form.password" required placeholder="••••••••"
+                <input type="password" x-model="form.password" required placeholder=""
                     class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
@@ -129,8 +158,8 @@ PANEL_HTML = """
         </form>
 
         <div class="border-t border-slate-800/80 pt-4 text-center">
-            <p class="text-xs text-slate-500">Wsparcie techniczne:</p>
-            <p class="text-xs text-brand-400 mt-1 font-medium"><a href="mailto:mbxryt24@zohomail.eu" class="hover:underline">mbxryt24@zohomail.eu</a></p>
+            <p class="text-xs text-slate-400">Nie masz konta ani licencji?</p>
+            <p class="text-xs text-brand-400 mt-1 font-medium">Skontaktuj się z nami: <a href="mailto:mbxryt24@zohomail.eu" class="hover:underline">mbxryt24@zohomail.eu</a></p>
         </div>
     </div>
 
@@ -290,9 +319,7 @@ PANEL_HTML = """
                     </div>
                 </template>
             </div>
-        </div>
-
-        <!-- MODAL EDYCJI KLUCZA -->
+        </div><!-- MODAL EDYCJI KLUCZA -->
         <div x-show="showEditModal" x-cloak class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 my-auto">
                 <h3 class="text-sm font-bold text-white uppercase tracking-wider">Edycja Klucza / Klienta</h3>
@@ -652,343 +679,495 @@ PANEL_HTML = """
 </html>
 """
 
-@app.route('/')
-@app.route('/admin')
+
+@app.route("/")
+@app.route("/admin")
 def serve_panel():
-    return render_template_string(PANEL_HTML)
+  return render_template_string(PANEL_HTML)
 
 
-@app.route('/api/verify', methods=['POST'])
+@app.route("/api/verify", methods=["POST"])
 def verify_license():
-    data = request.get_json() or {}
-    login_input = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    hwid = data.get("hwid", "").strip()
+  data = request.get_json() or {}
+  login_input = data.get("username", "").strip()
+  password = data.get("password", "").strip()
+  input_key = data.get("key", "").strip().upper()
+  hwid = data.get("hwid", "").strip()
 
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
 
-    # Sprawdzenie administratorów
-    cursor.execute("SELECT username, password_hash, role, package, rank FROM admins WHERE username COLLATE NOCASE = ?", (login_input,))
-    admin = cursor.fetchone()
-    if admin and check_password_hash(admin[1], password):
-        cursor.execute("INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
-                       (admin[0], admin[2], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        conn.close()
-        session['user'] = admin[0]
-        return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
-
-    # Sprawdzenie klientów
-    cursor.execute("SELECT username, password_hash, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username COLLATE NOCASE = ?", (login_input,))
-    client = cursor.fetchone()
-
-    if client:
-        c_username, c_pwd_hash, c_key, c_notes, c_status, c_created, c_expires, c_hwid = client
-
-        if not check_password_hash(c_pwd_hash, password):
-            conn.close()
-            return jsonify({"status": "invalid", "error": "Nieprawidłowe hasło."}), 200
-
-        if c_expires:
-            exp_dt = datetime.strptime(c_expires, "%Y-%m-%d %H:%M:%S")
-            if datetime.now() > exp_dt:
-                cursor.execute("UPDATE keys_db SET status = 'Wygasł' WHERE username = ?", (c_username,))
-                conn.commit()
-                conn.close()
-                return jsonify({"status": "invalid", "error": "Twoja subskrypcja wygasła."}), 200
-
-        if c_status != "Aktywny":
-            conn.close()
-            return jsonify({"status": "invalid", "error": f"Konto jest w stanie: {c_status}"}), 200
-
-        if not c_hwid and hwid:
-            cursor.execute("UPDATE keys_db SET hwid = ? WHERE username = ?", (hwid, c_username))
-            conn.commit()
-            c_hwid = hwid
-        elif c_hwid and hwid and c_hwid != hwid:
-            conn.close()
-            return jsonify({"status": "invalid", "error": "Konto jest przypisane do innego urządzenia (HWID mismatch)."}), 200
-
-        cursor.execute("INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
-                       (c_username, "Klient", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        conn.close()
-
-        session['user'] = c_username
-        return jsonify({
-            "status": "valid",
-            "package": "PRO",
-            "role": "Klient",
-            "key": c_key,
-            "status": c_status,
-            "notes": c_notes,
-            "expires_at": c_expires,
-            "hwid": c_hwid
-        })
-
-    conn.close()
-    return jsonify({"status": "invalid", "error": "Nieprawidłowy login lub hasło."}), 200
-
-
-@app.route('/api/keys/create', methods=['POST'])
-def create_key():
-    data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    key = data.get("key", "").strip().upper()
-    days = int(data.get("days", 30))
-    notes = data.get("notes", "").strip()
-
-    if not username or not password:
-        return jsonify({"status": "error", "error": "Login i hasło są wymagane."}), 400
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT username FROM admins WHERE username COLLATE NOCASE = ?", (username,))
-    if cursor.fetchone():
-        conn.close()
-        return jsonify({"status": "error", "error": "Nazwa zajęta przez admina."}), 400
-
-    cursor.execute("SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?", (username,))
-    if cursor.fetchone():
-        conn.close()
-        return jsonify({"status": "error", "error": "Taki klient już istnieje."}), 400
-
-    if not key:
-        r = lambda: uuid.uuid4().hex[:4].upper()
-        key = f"{r()}-{r()}-{r()}-{r()}"
-
-    created_at = datetime.now()
-    expires_at = (created_at + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S") if days > 0 else ""
-    pwd_hash = generate_password_hash(password)
-
+  cursor.execute(
+      "SELECT username, password_hash, role, package, rank FROM admins WHERE"
+      " username COLLATE NOCASE = ?",
+      (login_input,),
+  )
+  admin = cursor.fetchone()
+  if admin and check_password_hash(admin[1], password):
     cursor.execute(
-        "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, 'Aktywny', ?, ?, '')",
-        (username, pwd_hash, password, key, notes, created_at.strftime("%Y-%m-%d %H:%M:%S"), expires_at)
+        "INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
+        (admin[0], admin[2], datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
     )
     conn.commit()
     conn.close()
+    session["user"] = admin[0]
+    return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
 
-    return jsonify({"status": "success", "key": key})
+  cursor.execute(
+      "SELECT username, password_hash, key, notes, status, created_at,"
+      " expires_at, hwid FROM keys_db WHERE username COLLATE NOCASE = ?",
+      (login_input,),
+  )
+  client = cursor.fetchone()
 
+  if client:
+    (
+        c_username,
+        c_pwd_hash,
+        c_key,
+        c_notes,
+        c_status,
+        c_created,
+        c_expires,
+        c_hwid,
+    ) = client
 
-@app.route('/api/keys/edit', methods=['POST'])
-def edit_key():
-    data = request.get_json() or {}
-    old_username = data.get("old_username", "").strip()
-    new_username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    key = data.get("key", "").strip().upper()
-    expires_at = data.get("expires_at", "").strip()
-    notes = data.get("notes", "").strip()
+    if not check_password_hash(c_pwd_hash, password):
+      conn.close()
+      return jsonify({"status": "invalid", "error": "Nieprawidłowe hasło."}), 200
 
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+    if input_key and input_key != c_key.upper():
+      conn.close()
+      return (
+          jsonify(
+              {"status": "invalid", "error": "Nieprawidłowy klucz licencyjny."}
+          ),
+          200,
+      )
 
-    cursor.execute("SELECT password_hash, password_plain FROM keys_db WHERE username = ?", (old_username,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}), 404
-
-    pwd_hash = generate_password_hash(password) if password else row[0]
-    pwd_plain = password if password else row[1]
-
-    if old_username.lower() != new_username.lower():
-        cursor.execute("SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?", (new_username,))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({"status": "error", "error": "Nazwa użytkownika już istnieje."}), 400
-        cursor.execute("DELETE FROM keys_db WHERE username = ?", (old_username,))
+    if c_expires:
+      exp_dt = datetime.strptime(c_expires, "%Y-%m-%d %H:%M:%S")
+      if datetime.now() > exp_dt:
         cursor.execute(
-            "INSERT INTO keys_db (username, password_hash, password_plain, key, notes, status, created_at, expires_at, hwid) SELECT ?, ?, ?, key, notes, status, created_at, expires_at, hwid FROM keys_db WHERE username = ?",
-            (new_username, pwd_hash, pwd_plain, old_username)
+            "UPDATE keys_db SET status = 'Wygasł' WHERE username = ?",
+            (c_username,),
+        )
+        conn.commit()
+        conn.close()
+        return (
+            jsonify(
+                {"status": "invalid", "error": "Twoja subskrypcja wygasła."}
+            ),
+            200,
         )
 
+    if c_status != "Aktywny":
+      conn.close()
+      return (
+          jsonify(
+              {"status": "invalid", "error": f"Konto jest w stanie: {c_status}"}
+          ),
+          200,
+      )
+
+    if not c_hwid and hwid:
+      cursor.execute(
+          "UPDATE keys_db SET hwid = ? WHERE username = ?", (hwid, c_username)
+      )
+      conn.commit()
+      c_hwid = hwid
+    elif c_hwid and hwid and c_hwid != hwid:
+      conn.close()
+      return (
+          jsonify({
+              "status": "invalid",
+              "error": (
+                  "Konto jest przypisane do innego urządzenia (HWID mismatch)."
+              ),
+          }),
+          200,
+      )
+
     cursor.execute(
-        "UPDATE keys_db SET username = ?, password_hash = ?, password_plain = ?, key = ?, expires_at = ?, notes = ? WHERE username = ?",
-        (new_username, pwd_hash, pwd_plain, key, expires_at if expires_at else None, notes, old_username if old_username.lower() == new_username.lower() else new_username)
+        "INSERT INTO history (username, role, timestamp) VALUES (?, ?, ?)",
+        (c_username, "Klient", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
     )
     conn.commit()
     conn.close()
-    return jsonify({"status": "success"})
 
-
-@app.route('/api/keys/status', methods=['POST'])
-def change_key_status():
-    data = request.get_json() or {}
-    username = data.get("username")
-    new_status = data.get("status")
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE keys_db SET status = ? WHERE username = ?", (new_status, username))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-
-@app.route('/api/keys/reset_hwid', methods=['POST'])
-def reset_hwid():
-    data = request.get_json() or {}
-    username = data.get("username")
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE keys_db SET hwid = '' WHERE username = ?", (username,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-
-@app.route('/api/keys/delete', methods=['POST'])
-def delete_key():
-    data = request.get_json() or {}
-    admin_username = data.get("admin_username")
-    username_to_delete = data.get("username")
-
-    if admin_username.lower() != "maxikk":
-        return jsonify({"status": "error", "error": "Brak uprawnień właścicielskich."}), 403
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM keys_db WHERE username = ?", (username_to_delete,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
-
-
-@app.route('/api/backup/download', methods=['POST'])
-def download_backup():
-    data = request.get_json() or {}
-    password = data.get("password")
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT password_hash FROM admins WHERE username = 'maxikk'")
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row or not check_password_hash(row[0], password):
-        return jsonify({"error": "Nieprawidłowe hasło Właściciela."}), 403
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT username, password_hash, password_plain, key, notes, status, created_at, expires_at, hwid FROM keys_db")
-    rows = cursor.fetchall()
-    conn.close()
-
-    backup_dict = {}
-    for r in rows:
-        backup_dict[r[0]] = {
-            "password_hash": r[1],
-            "password_plain": r[2],
-            "key": r[3],
-            "notes": r[4],
-            "status": r[5],
-            "created_at": r[6],
-            "expires_at": r[7],
-            "hwid": r[8]
-        }
-
-    return Response(
-        json.dumps(backup_dict, indent=2, ensure_ascii=False),
-        mimetype="application/json",
-        headers={"Content-Disposition": "attachment;filename=mint_server_backup.json"}
-    )
-
-
-@app.route('/api/backup/upload', methods=['POST'])
-def upload_backup():
-    data = request.get_json() or {}
-    password = data.get("password")
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT password_hash FROM admins WHERE username = 'maxikk'")
-    row = cursor.fetchone()
-
-    if not row or not check_password_hash(row[0], password):
-        conn.close()
-        return jsonify({"status": "error", "error": "Nieprawidłowe hasło Właściciela."}), 403
-
-    try:
-        raw_data = data.get("backup_data")
-        parsed = json.loads(raw_data)
-        if isinstance(parsed, dict):
-            cursor.execute("DELETE FROM keys_db")
-            for uname, udata in parsed.items():
-                p_hash = udata.get("password_hash")
-                p_plain = udata.get("password_plain", "")
-                cursor.execute(
-                    "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (uname, p_hash, p_plain, udata.get("key"), udata.get("notes"), udata.get("status", "Aktywny"), udata.get("created_at"), udata.get("expires_at"), udata.get("hwid", ""))
-                )
-            conn.commit()
-            conn.close()
-            return jsonify({"status": "success"})
-    except Exception as e:
-        conn.close()
-        return jsonify({"status": "error", "error": f"Błąd: {str(e)}"}), 400
-
-    conn.close()
-    return jsonify({"status": "error", "error": "Nieprawidłowy format."}), 400
-
-
-@app.route('/api/admin/data', methods=['POST'])
-def get_admin_data():
-    data = request.get_json() or {}
-    current_username = data.get("username", "").strip()
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT rank FROM admins WHERE username COLLATE NOCASE = ?", (current_username,))
-    res = cursor.fetchone()
-    current_rank = res[0] if res else 0
-
-    cursor.execute("SELECT username, role, package, rank, password_hash FROM admins")
-    admins_rows = cursor.fetchall()
-
-    admins_filtered = []
-    for a in admins_rows:
-        uname, urole, upackage, urank, upwd_hash = a
-        credential = "Zabezpieczone (Hash)" if current_rank >= urank else "********"
-        admins_filtered.append({
-            "username": uname,
-            "role": urole,
-            "credential": credential
-        })
-
-    cursor.execute("SELECT username, key, password_plain, notes, status, created_at, expires_at, hwid FROM keys_db")
-    keys_rows = cursor.fetchall()
-    keys_dict = {}
-    for k in keys_rows:
-        keys_dict[k[0]] = {
-            "key": k[1],
-            "password": k[2],
-            "notes": k[3],
-            "status": k[4],
-            "created_at": k[5],
-            "expires_at": k[6],
-            "hwid": k[7]
-        }
-
-    cursor.execute("SELECT id, username, role, timestamp FROM history ORDER BY id DESC LIMIT 50")
-    hist_rows = cursor.fetchall()
-    history_list = [{"id": h[0], "username": h[1], "role": h[2], "timestamp": h[3]} for h in hist_rows]
-
-    conn.close()
-
+    session["user"] = c_username
     return jsonify({
-        "status": "success",
-        "keys": keys_dict,
-        "history": history_list,
-        "admins": admins_filtered
+        "status": "valid",
+        "package": "PRO",
+        "role": "Klient",
+        "key": c_key,
+        "status": c_status,
+        "notes": c_notes,
+        "expires_at": c_expires,
+        "hwid": c_hwid,
     })
 
+  conn.close()
+  return (
+      jsonify({"status": "invalid", "error": "Nieprawidłowy login lub hasło."}),
+      200,
+  )
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+
+@app.route("/api/keys/create", methods=["POST"])
+def create_key():
+  data = request.get_json() or {}
+  username = data.get("username", "").strip()
+  password = data.get("password", "").strip()
+  key = data.get("key", "").strip().upper()
+  days = int(data.get("days", 30))
+  notes = data.get("notes", "").strip()
+
+  if not username or not password:
+    return (
+        jsonify({"status": "error", "error": "Login i hasło są wymagane."}),
+        400,
+    )
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+
+  cursor.execute(
+      "SELECT username FROM admins WHERE username COLLATE NOCASE = ?",
+      (username,),
+  )
+  if cursor.fetchone():
+    conn.close()
+    return (
+        jsonify({"status": "error", "error": "Nazwa zajęta przez admina."}),
+        400,
+    )
+
+  cursor.execute(
+      "SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?",
+      (username,),
+  )
+  if cursor.fetchone():
+    conn.close()
+    return (
+        jsonify({"status": "error", "error": "Taki klient już istnieje."}),
+        400,
+    )
+
+  if not key:
+    r = lambda: uuid.uuid4().hex[:4].upper()
+    key = f"{r()}-{r()}-{r()}-{r()}"
+
+  created_at = datetime.now()
+  expires_at = (
+      (created_at + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+      if days > 0
+      else ""
+  )
+  pwd_hash = generate_password_hash(password)
+
+  cursor.execute(
+      "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, 'Aktywny', ?, ?, '')",
+      (
+          username,
+          pwd_hash,
+          password,
+          key,
+          notes,
+          created_at.strftime("%Y-%m-%d %H:%M:%S"),
+          expires_at,
+      ),
+  )
+  conn.commit()
+  conn.close()
+
+  return jsonify({"status": "success", "key": key})
+
+
+@app.route("/api/keys/edit", methods=["POST"])
+def edit_key():
+  data = request.get_json() or {}
+  old_username = data.get("old_username", "").strip()
+  new_username = data.get("username", "").strip()
+  password = data.get("password", "").strip()
+  key = data.get("key", "").strip().upper()
+  expires_at = data.get("expires_at", "").strip()
+  notes = data.get("notes", "").strip()
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+
+  cursor.execute(
+      "SELECT password_hash, password_plain FROM keys_db WHERE username = ?",
+      (old_username,),
+  )
+  row = cursor.fetchone()
+  if not row:
+    conn.close()
+    return (
+        jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}),
+        404,
+    )
+
+  pwd_hash = generate_password_hash(password) if password else row[0]
+  pwd_plain = password if password else row[1]
+
+  if old_username.lower() != new_username.lower():
+    cursor.execute(
+        "SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?",
+        (new_username,),
+    )
+    if cursor.fetchone():
+      conn.close()
+      return (
+          jsonify({
+              "status": "error",
+              "error": "Nazwa użytkownika już istnieje.",
+          }),
+          400,
+      )
+    cursor.execute("DELETE FROM keys_db WHERE username = ?", (old_username,))
+    cursor.execute(
+        "INSERT INTO keys_db (username, password_hash, password_plain, key,"
+        " notes, status, created_at, expires_at, hwid) SELECT ?, ?, ?, key,"
+        " notes, status, created_at, expires_at, hwid FROM keys_db WHERE"
+        " username = ?",
+        (new_username, pwd_hash, pwd_plain, old_username),
+    )
+
+  cursor.execute(
+      "UPDATE keys_db SET username = ?, password_hash = ?, password_plain = ?,"
+      " key = ?, expires_at = ?, notes = ? WHERE username = ?",
+      (
+          new_username,
+          pwd_hash,
+          pwd_plain,
+          key,
+          expires_at if expires_at else None,
+          notes,
+          (
+              old_username
+              if old_username.lower() == new_username.lower()
+              else new_username
+          ),
+      ),
+  )
+  conn.commit()
+  conn.close()
+  return jsonify({"status": "success"})
+
+
+@app.route("/api/keys/status", methods=["POST"])
+def change_key_status():
+  data = request.get_json() or {}
+  username = data.get("username")
+  new_status = data.get("status")
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute(
+      "UPDATE keys_db SET status = ? WHERE username = ?", (new_status, username)
+  )
+  conn.commit()
+  conn.close()
+  return jsonify({"status": "success"})
+
+
+@app.route("/api/keys/reset_hwid", methods=["POST"])
+def reset_hwid():
+  data = request.get_json() or {}
+  username = data.get("username")
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("UPDATE keys_db SET hwid = '' WHERE username = ?", (username,))
+  conn.commit()
+  conn.close()
+  return jsonify({"status": "success"})
+
+
+@app.route("/api/keys/delete", methods=["POST"])
+def delete_key():
+  data = request.get_json() or {}
+  admin_username = data.get("admin_username")
+  username_to_delete = data.get("username")
+
+  if admin_username.lower() != "maxikk":
+    return (
+        jsonify(
+            {"status": "error", "error": "Brak uprawnień właścicielskich."}
+        ),
+        403,
+    )
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute(
+      "DELETE FROM keys_db WHERE username = ?", (username_to_delete,)
+  )
+  conn.commit()
+  conn.close()
+  return jsonify({"status": "success"})
+
+
+@app.route("/api/backup/download", methods=["POST"])
+def download_backup():
+  data = request.get_json() or {}
+  password = data.get("password")
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("SELECT password_hash FROM admins WHERE username = 'maxikk'")
+  row = cursor.fetchone()
+  conn.close()
+
+  if not row or not check_password_hash(row[0], password):
+    return jsonify({"error": "Nieprawidłowe hasło Właściciela."}), 403
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute(
+      "SELECT username, password_hash, password_plain, key, notes, status,"
+      " created_at, expires_at, hwid FROM keys_db"
+  )
+  rows = cursor.fetchall()
+  conn.close()
+
+  backup_dict = {}
+  for r in rows:
+    backup_dict[r[0]] = {
+        "password_hash": r[1],
+        "password_plain": r[2],
+        "key": r[3],
+        "notes": r[4],
+        "status": r[5],
+        "created_at": r[6],
+        "expires_at": r[7],
+        "hwid": r[8],
+    }
+
+  return Response(
+      json.dumps(backup_dict, indent=2, ensure_ascii=False),
+      mimetype="application/json",
+      headers={
+          "Content-Disposition": (
+              "attachment;filename=mint_server_backup.json"
+          )
+      },
+  )
+
+
+@app.route("/api/backup/upload", methods=["POST"])
+def upload_backup():
+  data = request.get_json() or {}
+  password = data.get("password")
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("SELECT password_hash FROM admins WHERE username = 'maxikk'")
+  row = cursor.fetchone()
+
+  if not row or not check_password_hash(row[0], password):
+    conn.close()
+    return jsonify({"status": "error", "error": "Nieprawidłowe hasło Właściciela."}), 403
+
+  try:
+    raw_data = data.get("backup_data")
+    parsed = json.loads(raw_data)
+    if isinstance(parsed, dict):
+      cursor.execute("DELETE FROM keys_db")
+      for uname, udata in parsed.items():
+        p_hash = udata.get("password_hash")
+        p_plain = udata.get("password_plain", "")
+        cursor.execute(
+            "INSERT INTO keys_db VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                uname,
+                p_hash,
+                p_plain,
+                udata.get("key"),
+                udata.get("notes"),
+                udata.get("status", "Aktywny"),
+                udata.get("created_at"),
+                udata.get("expires_at"),
+                udata.get("hwid", ""),
+            ),
+        )
+      conn.commit()
+      conn.close()
+      return jsonify({"status": "success"})
+  except Exception as e:
+    conn.close()
+    return jsonify({"status": "error", "error": f"Błąd: {str(e)}"}), 400
+
+  conn.close()
+  return jsonify({"status": "error", "error": "Nieprawidłowy format."}), 400
+
+
+@app.route("/api/admin/data", methods=["POST"])
+def get_admin_data():
+  data = request.get_json() or {}
+  current_username = data.get("username", "").strip()
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+
+  cursor.execute(
+      "SELECT rank FROM admins WHERE username COLLATE NOCASE = ?",
+      (current_username,),
+  )
+  res = cursor.fetchone()
+  current_rank = res[0] if res else 0
+
+  cursor.execute(
+      "SELECT username, role, package, rank, password_hash FROM admins"
+  )
+  admins_rows = cursor.fetchall()
+
+  admins_filtered = []
+  for a in admins_rows:
+    uname, urole, upackage, urank, upwd_hash = a
+    credential = "Zabezpieczone (Hash)" if current_rank >= urank else "********"
+    admins_filtered.append(
+        {"username": uname, "role": urole, "credential": credential}
+    )
+
+  cursor.execute(
+      "SELECT username, key, password_plain, notes, status, created_at,"
+      " expires_at, hwid FROM keys_db"
+  )
+  keys_rows = cursor.fetchall()
+  keys_dict = {}
+  for k in keys_rows:
+    keys_dict[k[0]] = {
+        "key": k[1],
+        "password": k[2],
+        "notes": k[3],
+        "status": k[4],
+        "created_at": k[5],
+        "expires_at": k[6],
+        "hwid": k[7],
+    }
+
+  cursor.execute(
+      "SELECT id, username, role, timestamp FROM history ORDER BY id DESC"
+      " LIMIT 50"
+  )
+  hist_rows = cursor.fetchall()
+  history_list = [
+      {"id": h[0], "username": h[1], "role": h[2], "timestamp": h[3]}
+      for h in hist_rows
+  ]
+
+  conn.close()
+
+  return jsonify({
+      "status": "success",
+      "keys": keys_dict,
+      "history": history_list,
+      "admins": admins_filtered,
+  })
+
+
+if __name__ == "__main__":
+  app.run(host="0.0.0.0", port=5000)
