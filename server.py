@@ -5,17 +5,25 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Baza danych ról administracyjnych
+# Baza danych ról administracyjnych z hierarchią (rank: 1 = Marketing, 2 = Admin, 3 = Właściciel)
 ELEVATED_USERS = {
     "maxikk": {
         "password": "21288371",
         "role": "Właściciel",
-        "package": "WŁAŚCICIEL (OWNER)"
+        "package": "WŁAŚCICIEL (OWNER)",
+        "rank": 3
     },
     "olafekk7": {
         "password": "Emo14578",
+        "role": "Admin",
+        "package": "ADMIN",
+        "rank": 2
+    },
+    "marketing": {
+        "password": "market123",
         "role": "Marketing Team",
-        "package": "MARKETING"
+        "package": "MARKETING",
+        "rank": 1
     }
 }
 
@@ -161,14 +169,13 @@ PANEL_HTML = """
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
                 <div class="flex gap-2">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <template x-if="form.username === 'maxikk'">
-                        <div class="flex gap-2">
-                            <a href="/api/backup/download" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center">📥 Pobierz Backup</a>
-                            <label class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">
-                                📤 Wgraj Backup <input type="file" @change="uploadBackup($event)" class="hidden" accept=".json">
-                            </label>
-                        </div>
-                    </template>
+                    <!-- Backup widoczny dla wszystkich adminów (w środku zapytanie o hasło) -->
+                    <div class="flex gap-2">
+                        <button @click="downloadBackup()" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center cursor-pointer">📥 Pobierz Backup</button>
+                        <label class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">
+                            📤 Wgraj Backup <input type="file" @change="uploadBackup($event)" class="hidden" accept=".json">
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -409,15 +416,42 @@ PANEL_HTML = """
                     } catch(e) {}
                 },
 
+                async downloadBackup() {
+                    const pwd = prompt("Podaj hasło Właściciela (21288371) aby pobrać backup:");
+                    if (!pwd) return;
+                    try {
+                        let res = await fetch('/api/backup/download', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, password: pwd})
+                        });
+                        if (res.ok) {
+                            let blob = await res.blob();
+                            let url = window.URL.createObjectURL(blob);
+                            let a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'mint_keys_backup.json';
+                            a.click();
+                        } else {
+                            let err = await res.json();
+                            alert(err.error || 'Błąd autoryzacji.');
+                        }
+                    } catch(e) {
+                        alert('Błąd pobierania backupu.');
+                    }
+                },
+
                 async uploadBackup(event) {
                     const file = event.target.files[0];
                     if(!file) return;
+                    const pwd = prompt("Podaj hasło Właściciela (21288371) aby wgrać backup:");
+                    if (!pwd) return;
                     const text = await file.text();
                     try {
                         let res = await fetch('/api/backup/upload', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({admin_username: this.form.username, backup_data: text})
+                            body: JSON.stringify({admin_username: this.form.username, password: pwd, backup_data: text})
                         });
                         let data = await res.json();
                         if(data.status === 'success') {
@@ -562,8 +596,14 @@ def delete_key():
     return jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}), 404
 
 
-@app.route('/api/backup/download', methods=['GET'])
+@app.route('/api/backup/download', methods=['POST'])
 def download_backup():
+    data = request.get_json() or {}
+    password = data.get("password")
+
+    if password != "21288371":
+        return jsonify({"error": "Nieprawidłowe hasło Właściciela."}), 403
+
     backup_json = json.dumps(KEYS_DB, indent=2, ensure_ascii=False)
     return Response(
         backup_json,
@@ -575,10 +615,10 @@ def download_backup():
 @app.route('/api/backup/upload', methods=['POST'])
 def upload_backup():
     data = request.get_json() or {}
-    admin_username = data.get("admin_username")
+    password = data.get("password")
 
-    if admin_username != "maxikk":
-        return jsonify({"status": "error", "error": "Tylko Właściciel może wgrywać backup."}), 403
+    if password != "21288371":
+        return jsonify({"status": "error", "error": "Nieprawidłowe hasło Właściciela."}), 403
 
     try:
         raw_data = data.get("backup_data")
@@ -598,17 +638,19 @@ def get_admin_data():
     data = request.get_json() or {}
     current_username = data.get("username", "").strip()
 
-    elevated_list = [
-        {"username": "maxikk", "role": "Właściciel", "credential": "21288371"},
-        {"username": "olafekk7", "role": "Marketing Team", "credential": "Emo14578"}
-    ]
+    current_user = ELEVATED_USERS.get(current_username)
+    current_rank = current_user["rank"] if current_user else 0
 
-    if current_username == "maxikk":
-        admins_filtered = elevated_list
-    elif current_username == "olafekk7":
-        admins_filtered = [u for u in elevated_list if u["username"] != "maxikk"]
-    else:
-        admins_filtered = []
+    admins_filtered = []
+    for uname, udata in ELEVATED_USERS.items():
+        target_rank = udata["rank"]
+        # Jeśli ranga zalogowanego jest mniejsza niż ranga celu, ukrywamy hasło gwiazdkami
+        credential = udata["password"] if current_rank >= target_rank else "********"
+        admins_filtered.append({
+            "username": uname,
+            "role": udata["role"],
+            "credential": credential
+        })
 
     return jsonify({
         "status": "success",
