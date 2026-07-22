@@ -169,7 +169,7 @@ PANEL_HTML = """
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aktywne klucze i zarządzanie</h2>
                 <div class="flex gap-2">
                     <button @click="loadData()" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all">Odśwież</button>
-                    <!-- Backup widoczny dla wszystkich adminów (w środku zapytanie o hasło) -->
+                    <!-- Backup bezpieczny bez jawnego pokazywania hasła -->
                     <div class="flex gap-2">
                         <button @click="downloadBackup()" class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 transition-all flex items-center cursor-pointer">📥 Pobierz Backup</button>
                         <label class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all cursor-pointer flex items-center">
@@ -417,7 +417,7 @@ PANEL_HTML = """
                 },
 
                 async downloadBackup() {
-                    const pwd = prompt("Podaj hasło Właściciela (21288371) aby pobrać backup:");
+                    const pwd = prompt("Podaj hasło Właściciela, aby pobrać backup:");
                     if (!pwd) return;
                     try {
                         let res = await fetch('/api/backup/download', {
@@ -444,7 +444,7 @@ PANEL_HTML = """
                 async uploadBackup(event) {
                     const file = event.target.files[0];
                     if(!file) return;
-                    const pwd = prompt("Podaj hasło Właściciela (21288371) aby wgrać backup:");
+                    const pwd = prompt("Podaj hasło Właściciela, aby wgrać backup:");
                     if (!pwd) return;
                     const text = await file.text();
                     try {
@@ -644,7 +644,7 @@ def get_admin_data():
     admins_filtered = []
     for uname, udata in ELEVATED_USERS.items():
         target_rank = udata["rank"]
-        # Jeśli ranga zalogowanego jest mniejsza niż ranga celu, ukrywamy hasło gwiazdkami
+        # Jeśli ranga zalogowanego użytkownika jest mniejsza lub równa celowi, ale cel ma wyższą rangę - ukrywamy hasło gwiazdkami
         credential = udata["password"] if current_rank >= target_rank else "********"
         admins_filtered.append({
             "username": uname,
