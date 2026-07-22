@@ -285,4 +285,341 @@ PANEL_HTML = """
                         </tr>
                     </thead>
                     <tbody class="text-xs divide-y divide-slate-800/40">
-     
+                         <template x-for="user in adminsList" :key="user.username">
+                            <tr class="hover:bg-slate-800/30 transition-colors">
+                                <td class="py-3 px-3 font-semibold text-slate-200" x-text="user.username"></td>
+                                <td class="py-3 px-3 text-brand-400 font-medium" x-text="user.role"></td>
+                                <td class="py-3 px-3 text-right font-mono text-slate-400" x-text="user.credential"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                isLoggedIn: false,
+                activeTab: 'keys',
+                form: { username: '', password: '' },
+                userData: {},
+                message: '',
+                keysList: {},
+                historyList: [],
+                adminsList: [],
+                newKeyForm: { username: '', password: '', key: '', notes: '' },
+                createMessage: '',
+                createSuccess: false,
+
+                async login() {
+                    this.message = '';
+                    try {
+                        let res = await fetch('/api/verify', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(this.form)
+                        });
+                        let data = await res.json();
+                        if (data.status === 'valid') {
+                            this.isLoggedIn = true;
+                            this.userData = data;
+                            if (data.role !== 'Klient') {
+                                this.loadData();
+                            }
+                        } else {
+                            this.message = data.error || 'Nieprawidłowy login lub hasło.';
+                        }
+                    } catch(e) {
+                        this.message = 'Błąd połączenia z serwerem.';
+                    }
+                },
+
+                async loadData() {
+                    try {
+                        let res = await fetch('/api/admin/data', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({username: this.form.username})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.keysList = data.keys;
+                            this.historyList = data.history;
+                            this.adminsList = data.admins;
+                        }
+                    } catch(e) {}
+                },
+
+                generateKeyString() {
+                    const r = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+                    this.newKeyForm.key = `${r()}-${r()}-${r()}-${r()}`;
+                },
+
+                async createKey() {
+                    this.createMessage = '';
+                    try {
+                        let res = await fetch('/api/keys/create', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, ...this.newKeyForm})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.createSuccess = true;
+                            this.createMessage = 'Klucz został pomyślnie utworzony!';
+                            this.newKeyForm = { username: '', password: '', key: '', notes: '' };
+                            this.loadData();
+                        } else {
+                            this.createSuccess = false;
+                            this.createMessage = data.error || 'Błąd tworzenia klucza.';
+                        }
+                    } catch(e) {
+                        this.createSuccess = false;
+                        this.createMessage = 'Błąd połączenia.';
+                    }
+                },
+
+                async changeStatus(targetUser, newStatus) {
+                    try {
+                        let res = await fetch('/api/keys/status', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, username: targetUser, status: newStatus})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.loadData();
+                        }
+                    } catch(e) {}
+                },
+
+                async deleteKey(targetUser) {
+                    if(!confirm(`Czy na pewno chcesz usunąć klucz użytkownika ${targetUser}?`)) return;
+                    try {
+                        let res = await fetch('/api/keys/delete', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, username: targetUser})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.loadData();
+                        } else {
+                            alert(data.error || 'Nie udało się usunąć.');
+                        }
+                    } catch(e) {}
+                },
+
+                async uploadBackup(event) {
+                    const file = event.target.files[0];
+                    if(!file) return;
+                    const text = await file.text();
+                    try {
+                        let res = await fetch('/api/backup/upload', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, backup_data: text})
+                        });
+                        let data = await res.json();
+                        if(data.status === 'success') {
+                            alert('Backup wgrany pomyślnie!');
+                            this.loadData();
+                        } else {
+                            alert(data.error || 'Błąd wczytywania backupu.');
+                        }
+                    } catch(e) {
+                        alert('Błąd przesyłania pliku.');
+                    }
+                },
+
+                logout() {
+                    this.isLoggedIn = false;
+                    this.form = { username: '', password: '' };
+                    this.userData = {};
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/')
+@app.route('/admin')
+def serve_panel():
+    return render_template_string(PANEL_HTML)
+
+
+@app.route('/api/verify', methods=['POST'])
+def verify_license():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
+
+    if username in ELEVATED_USERS:
+        user = ELEVATED_USERS[username]
+        if user["password"] == password:
+            LOGIN_HISTORY.insert(0, {
+                "username": username,
+                "role": user["role"],
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            return jsonify({
+                "status": "valid",
+                "package": user["package"],
+                "role": user["role"]
+            })
+
+    if username in KEYS_DB:
+        client = KEYS_DB[username]
+        if client["password"] == password:
+            if client.get("status", "Aktywny") != "Aktywny":
+                return jsonify({"status": "invalid", "error": f"Konto jest w stanie: {client['status']}"}), 200
+
+            LOGIN_HISTORY.insert(0, {
+                "username": username,
+                "role": "Klient",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            return jsonify({
+                "status": "valid",
+                "package": "PRO",
+                "role": "Klient",
+                "key": client["key"],
+                "status": client.get("status", "Aktywny"),
+                "notes": client.get("notes", "")
+            })
+
+    for c_name, c_data in KEYS_DB.items():
+        if c_data["key"] == key:
+            if c_data.get("status", "Aktywny") != "Aktywny":
+                return jsonify({"status": "invalid", "error": f"Ten klucz jest {c_data['status']}"}), 200
+            return jsonify({
+                "status": "valid",
+                "package": "PRO",
+                "role": "Klient"
+            })
+
+    return jsonify({
+        "status": "invalid",
+        "error": "Nieprawidłowy login, hasło lub klucz."
+    }), 200
+
+
+@app.route('/api/keys/create', methods=['POST'])
+def create_key():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    key = data.get("key", "").strip().upper()
+    notes = data.get("notes", "").strip()
+
+    if not username or not password:
+        return jsonify({"status": "error", "error": "Login i hasło są wymagane."}), 400
+
+    if username in ELEVATED_USERS or username in KEYS_DB:
+        return jsonify({"status": "error", "error": "Taki użytkownik już istnieje."}), 400
+
+    if not key:
+        r = lambda: uuid.uuid4().hex[:4].upper()
+        key = f"{r()}-{r()}-{r()}-{r()}"
+
+    KEYS_DB[username] = {
+        "password": password,
+        "key": key,
+        "notes": notes,
+        "status": "Aktywny",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    return jsonify({"status": "success", "key": key})
+
+
+@app.route('/api/keys/status', methods=['POST'])
+def change_key_status():
+    data = request.get_json() or {}
+    username = data.get("username")
+    new_status = data.get("status")
+
+    if username in KEYS_DB and new_status in ["Aktywny", "Wstrzymany", "Anulowany"]:
+        KEYS_DB[username]["status"] = new_status
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "error": "Nie znaleziono klucza lub zły status."}), 400
+
+
+@app.route('/api/keys/delete', methods=['POST'])
+def delete_key():
+    data = request.get_json() or {}
+    admin_username = data.get("admin_username")
+    username_to_delete = data.get("username")
+
+    if admin_username != "maxikk":
+        return jsonify({"status": "error", "error": "Brak uprawnień właścicielskich do usuwania."}), 403
+
+    if username_to_delete in KEYS_DB:
+        del KEYS_DB[username_to_delete]
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "error": "Nie znaleziono użytkownika."}), 404
+
+
+@app.route('/api/backup/download', methods=['GET'])
+def download_backup():
+    backup_json = json.dumps(KEYS_DB, indent=2, ensure_ascii=False)
+    return Response(
+        backup_json,
+        mimetype="application/json",
+        headers={"Content-Disposition": "attachment;filename=mint_keys_backup.json"}
+    )
+
+
+@app.route('/api/backup/upload', methods=['POST'])
+def upload_backup():
+    data = request.get_json() or {}
+    admin_username = data.get("admin_username")
+
+    if admin_username != "maxikk":
+        return jsonify({"status": "error", "error": "Tylko Właściciel może wgrywać backup."}), 403
+
+    try:
+        raw_data = data.get("backup_data")
+        parsed = json.loads(raw_data)
+        if isinstance(parsed, dict):
+            KEYS_DB.clear()
+            KEYS_DB.update(parsed)
+            return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "error": f"Błąd parsowania JSON: {str(e)}"}), 400
+
+    return jsonify({"status": "error", "error": "Nieprawidłowy format."}), 400
+
+
+@app.route('/api/admin/data', methods=['POST'])
+def get_admin_data():
+    data = request.get_json() or {}
+    current_username = data.get("username", "").strip()
+
+    elevated_list = [
+        {"username": "maxikk", "role": "Właściciel", "credential": "21288371"},
+        {"username": "olafekk7", "role": "Marketing Team", "credential": "Emo14578"}
+    ]
+
+    if current_username == "maxikk":
+        admins_filtered = elevated_list
+    elif current_username == "olafekk7":
+        admins_filtered = [u for u in elevated_list if u["username"] != "maxikk"]
+    else:
+        admins_filtered = []
+
+    return jsonify({
+        "status": "success",
+        "keys": KEYS_DB,
+        "history": LOGIN_HISTORY[:50],
+        "admins": admins_filtered
+    })
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
