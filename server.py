@@ -93,14 +93,14 @@ PANEL_HTML = """
         <div class="text-center flex flex-col items-center gap-2">
             <div class="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-xl font-bold shadow-lg shadow-brand-500/10">⚡</div>
             <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">Logowanie do Systemu</h1>
-            <p class="text-xs text-slate-400">Wpisz login i hasło</p>
+            <p class="text-xs text-slate-400">Podaj dane lub klucz licencyjny</p>
         </div>
 
         <form @submit.prevent="login()" class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login</label>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Login lub Klucz</label>
                 <input type="text" x-model="form.username" required placeholder=""
-                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
+                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-all uppercase">
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -160,6 +160,7 @@ PANEL_HTML = """
             </div>
         </div>
     </div>
+
     <!-- PANEL ADMINISTRACYJNY -->
     <div x-show="isLoggedIn && userData.role !== 'Klient'" class="w-full max-w-5xl flex flex-col gap-5 my-auto" style="display: none;" :style="(isLoggedIn && userData.role !== 'Klient') ? 'display: flex;' : 'display: none;'">
         <header class="flex items-center justify-between border-b border-slate-800 pb-4 gap-2">
@@ -183,7 +184,6 @@ PANEL_HTML = """
             <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">📜 Historia</button>
             <button @click="activeTab = 'admins'" :class="activeTab === 'admins' ? 'bg-brand-500 text-white font-bold shadow-lg shadow-brand-500/20' : 'bg-slate-900 text-slate-400 hover:text-slate-200'" class="px-3.5 py-2 rounded-xl text-xs transition-all shrink-0">🛡️ Zespół</button>
         </div>
-
         <!-- 1. Baza Kluczy -->
         <div x-show="activeTab === 'keys'" class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
@@ -260,7 +260,7 @@ PANEL_HTML = """
                     </div>
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Nowe hasło (zostaw puste by nie zmieniać)</label>
-                        <input type="password" x-model="editForm.password" placeholder="••••••••" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                        <input type="password" x-model="editForm.password" placeholder="" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] font-semibold text-slate-400 uppercase">Klucz licencyjny</label>
@@ -287,12 +287,12 @@ PANEL_HTML = """
             <form @submit.prevent="createKey()" class="flex flex-col gap-4">
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[11px] font-semibold text-slate-400 uppercase">Nazwa użytkownika klienta</label>
-                    <input type="text" x-model="newKeyForm.username" required placeholder="np. klient_123"
+                    <input type="text" x-model="newKeyForm.username" required placeholder=""
                         class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[11px] font-semibold text-slate-400 uppercase">Hasło użytkownika</label>
-                    <input type="password" x-model="newKeyForm.password" required placeholder="••••••••"
+                    <input type="password" x-model="newKeyForm.password" required placeholder=""
                         class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
                 <div class="flex flex-col gap-1.5">
@@ -310,7 +310,7 @@ PANEL_HTML = """
                 </div>
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[11px] font-semibold text-slate-400 uppercase">Notatki (opcjonalnie)</label>
-                    <input type="text" x-model="newKeyForm.notes" placeholder="np. Pakiet roczny"
+                    <input type="text" x-model="newKeyForm.notes" placeholder=""
                         class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
                 <div x-show="createMessage" class="text-xs px-3 py-2.5 rounded-xl text-center" :class="createSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'" x-text="createMessage"></div>
