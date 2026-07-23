@@ -15,7 +15,6 @@ def init_db():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
   
-  # Usunięto COLLATE NOCASE, aby loginy były w pełni wrażliwe na wielkość liter (case-sensitive)
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
             username TEXT PRIMARY KEY,
@@ -55,7 +54,6 @@ def init_db():
         )
     """)
     
-  # Tabela na komunikaty właściciela wyświetlane w aplikacji/panelu
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS announcements (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -95,7 +93,6 @@ def init_db():
 init_db()
 
 
-# Funkcja automatycznie zmieniająca status na "Wygasł" dla przeterminowanych kluczy
 def verify_expired_keys():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
@@ -254,10 +251,29 @@ PANEL_HTML = """
             <h2 class="text-xs font-bold text-brand-400 uppercase tracking-wider flex items-center gap-2">
                 <span>👑</span> Strefa Właściciela: Globalny komunikat dla aplikacji
             </h2>
+            
+            <!-- Podgląd aktualnie zapisanego komunikatu z opcją Edycji / Usunięcia -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
+                <span class="text-[10px] font-semibold text-slate-500 uppercase">Aktualnie aktywny komunikat w systemie:</span>
+                <template x-if="announcement">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                        <p class="text-xs text-brand-300 font-medium" x-text="announcement"></p>
+                        <div class="flex items-center gap-1.5">
+                            <button @click="ownerAnnouncement = announcement" class="px-2.5 py-1 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-400 rounded text-[10px] font-semibold cursor-pointer">Edytuj</button>
+                            <button @click="deleteAnnouncement()" class="px-2.5 py-1 bg-rose-600/25 hover:bg-rose-600/40 text-rose-400 rounded text-[10px] font-semibold cursor-pointer">Usuń</button>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="!announcement">
+                    <p class="text-xs text-slate-500 italic">Brak aktywnego komunikatu. Wpisz treść poniżej, aby dodać.</p>
+                </template>
+            </div>
+
+            <!-- Formularz wprowadzania / aktualizacji -->
             <div class="flex gap-2 flex-col sm:flex-row">
                 <input type="text" x-model="ownerAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
                     class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Zapisz komunikat</button>
+                <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer" x-text="announcement ? 'Zaktualizuj' : 'Dodaj komunikat'"></button>
             </div>
         </div>
 
@@ -307,7 +323,7 @@ PANEL_HTML = """
                     class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
             </div>
 
-            <!-- Karty kluczy (Filtrowane w czasie rzeczywistym) -->
+            <!-- Karty kluczy -->
             <div class="flex flex-col gap-3">
                 <template x-for="(data, username) in filteredKeys" :key="username">
                     <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 shadow-md">
@@ -351,7 +367,6 @@ PANEL_HTML = """
                             <span class="text-xs text-slate-300" x-text="data.notes"></span>
                         </div>
 
-                        <!-- Przyciski akcji -->
                         <div class="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-800/60 flex-wrap">
                             <button @click="resetHwid(username)" class="px-2.5 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded-lg text-[11px] font-medium cursor-pointer">Reset HWID</button>
                             <button @click="openEdit(username, data)" class="px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-lg text-[11px] font-medium cursor-pointer">Edytuj</button>
@@ -497,7 +512,6 @@ PANEL_HTML = """
                 createMessage: '',
                 createSuccess: false,
 
-                // Automatyczne odświeżanie panelu co 10 sekund
                 init() {
                     setInterval(() => {
                         if (this.isLoggedIn && this.userData.role !== 'Klient') {
@@ -506,7 +520,6 @@ PANEL_HTML = """
                     }, 10000);
                 },
 
-                // Filtrowanie kluczy na żywo po loginie
                 get filteredKeys() {
                     if (!this.searchQuery) return this.keysList;
                     let filtered = {};
@@ -582,6 +595,12 @@ PANEL_HTML = """
                     } catch(e) {
                         alert('Błąd połączenia.');
                     }
+                },
+
+                async deleteAnnouncement() {
+                    if (!confirm('Czy na pewno chcesz usunąć aktywny komunikat?')) return;
+                    this.ownerAnnouncement = '';
+                    await this.saveAnnouncement();
                 },
 
                 generateKeyString() {
@@ -779,7 +798,7 @@ def serve_panel():
 @app.route("/api/verify", methods=["POST"])
 def verify_license():
   data = request.get_json() or {}
-  login_input = data.get("username", "").strip()  # Dokładne dopasowanie uwzględniające wielkość liter
+  login_input = data.get("username", "").strip()
   password = data.get("password", "").strip()
   input_key = data.get("key", "").strip().upper()
   hwid = data.get("hwid", "").strip()
@@ -787,12 +806,10 @@ def verify_license():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
 
-  # Pobranie aktualnego ogłoszenia
   cursor.execute("SELECT message FROM announcements WHERE id = 1")
   ann_row = cursor.fetchone()
   announcement = ann_row[0] if ann_row else ""
 
-  # Sprawdzenie administratora (dokładny match loginu - case-sensitive)
   cursor.execute(
       "SELECT username, password_hash, role, package, rank FROM admins WHERE username = ?",
       (login_input,),
@@ -813,7 +830,6 @@ def verify_license():
         "announcement": announcement
     })
 
-  # Sprawdzenie klienta (dokładny match loginu - case-sensitive)
   cursor.execute(
       "SELECT username, password_hash, key, notes, status, created_at,"
       " expires_at, hwid FROM keys_db WHERE username = ?",
@@ -922,7 +938,6 @@ def update_announcement():
   admin_username = data.get("admin_username", "").strip()
   new_message = data.get("message", "").strip()
 
-  # Tylko właściciel (dokładnie "maxikk") może zmieniać komunikat
   if admin_username != "maxikk":
     return jsonify({"status": "error", "error": "Brak uprawnień właścicielskich."}), 403
 
@@ -1213,7 +1228,6 @@ def get_admin_data():
   data = request.get_json() or {}
   current_username = data.get("username", "").strip()
 
-  # Automatyczne sprawdzenie wygasłych kluczy przy każdym odświeżeniu/pobieraniu danych w panelu
   verify_expired_keys()
 
   conn = sqlite3.connect(DB_NAME)
@@ -1266,7 +1280,6 @@ def get_admin_data():
       for h in hist_rows
   ]
 
-  # Pobranie aktualnego ogłoszenia
   cursor.execute("SELECT message FROM announcements WHERE id = 1")
   ann_row = cursor.fetchone()
   announcement = ann_row[0] if ann_row else ""
