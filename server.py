@@ -14,9 +14,11 @@ DB_NAME = "mint_server.db"
 def init_db():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
+  
+  # Usunięto COLLATE NOCASE, aby loginy były w pełni wrażliwe na wielkość liter (case-sensitive)
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
-            username TEXT PRIMARY KEY COLLATE NOCASE,
+            username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
             package TEXT NOT NULL,
@@ -25,7 +27,7 @@ def init_db():
     """)
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS keys_db (
-            username TEXT PRIMARY KEY COLLATE NOCASE,
+            username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             password_plain TEXT DEFAULT '',
             key TEXT NOT NULL,
@@ -52,6 +54,18 @@ def init_db():
             timestamp TEXT
         )
     """)
+    
+  # Tabela na komunikaty właściciela wyświetlane w aplikacji/panelu
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            message TEXT
+        )
+    """)
+  cursor.execute(
+      "INSERT OR IGNORE INTO announcements (id, message) VALUES (1, '')"
+  )
+
   cursor.execute("SELECT COUNT(*) FROM admins")
   if cursor.fetchone()[0] == 0:
     default_admins = [
@@ -79,6 +93,30 @@ def init_db():
 
 
 init_db()
+
+
+# Funkcja automatycznie zmieniająca status na "Wygasł" dla przeterminowanych kluczy
+def verify_expired_keys():
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("SELECT username, expires_at, status FROM keys_db WHERE status = 'Aktywny'")
+  rows = cursor.fetchall()
+  now = datetime.now()
+
+  for r in rows:
+    if r[1]:
+      try:
+        exp_dt = datetime.strptime(r[1], "%Y-%m-%d %H:%M:%S")
+        if now > exp_dt:
+          cursor.execute(
+              "UPDATE keys_db SET status = 'Wygasł' WHERE username = ?", (r[0],)
+          )
+      except Exception:
+        pass
+
+  conn.commit()
+  conn.close()
+
 
 PANEL_HTML = """
 <!DOCTYPE html>
@@ -113,7 +151,7 @@ PANEL_HTML = """
             <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-500/20 to-emerald-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 text-2xl font-bold shadow-xl shadow-brand-500/10">⚡</div>
             <div>
                 <h1 class="text-lg font-bold text-white tracking-tight">Mint License System</h1>
-                <p class="text-xs text-slate-400 mt-0.5">Zaloguj się do panelu zarządzania</p>
+                <p class="text-xs text-slate-400 mt-0.5">Zaloguj się do panelu zarządzania (uwzględnia wielkość liter)</p>
             </div>
         </div>
 
@@ -160,6 +198,15 @@ PANEL_HTML = """
             <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all cursor-pointer">Wyloguj</button>
         </header>
 
+        <!-- Komunikat od Właściciela dla klientów -->
+        <div x-show="announcement" x-cloak class="bg-brand-500/10 border border-brand-500/30 rounded-2xl p-4 text-xs text-brand-300 flex items-start gap-3">
+            <span class="text-base">📢</span>
+            <div class="flex flex-col gap-0.5">
+                <span class="font-bold text-white uppercase tracking-wider text-[10px]">Ogłoszenie od Właściciela</span>
+                <p x-text="announcement"></p>
+            </div>
+        </div>
+
         <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-xl flex flex-col gap-5">
             <div>
                 <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Twój Klucz Licencyjny</h2>
@@ -196,11 +243,23 @@ PANEL_HTML = """
                         <span>Panel Admina</span>
                         <span class="text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2 py-0.5 rounded-full uppercase" x-text="userData.role"></span>
                     </h1>
-                    <p class="text-xs text-slate-400 truncate">Zalogowany: <b class="text-slate-200" x-text="form.username"></b></p>
+                    <p class="text-xs text-slate-400 truncate">Zalogowany: <b class="text-slate-200" x-text="form.username"></b> (Auto-odświeżanie co 10s)</p>
                 </div>
             </div>
             <button @click="logout()" class="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition-all cursor-pointer">Wyloguj</button>
         </header>
+
+        <!-- STREFA WŁAŚCICIELA: Komunikat do aplikacji (widoczna tylko dla maxikk) -->
+        <div x-show="form.username === 'maxikk'" class="bg-slate-900/90 border border-brand-500/30 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-3">
+            <h2 class="text-xs font-bold text-brand-400 uppercase tracking-wider flex items-center gap-2">
+                <span>👑</span> Strefa Właściciela: Globalny komunikat dla aplikacji
+            </h2>
+            <div class="flex gap-2 flex-col sm:flex-row">
+                <input type="text" x-model="ownerAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
+                    class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Zapisz komunikat</button>
+            </div>
+        </div>
 
         <!-- STATYSTYKI DASHBOARDU -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -242,9 +301,15 @@ PANEL_HTML = """
                 </div>
             </div>
 
-            <!-- Karty kluczy -->
+            <!-- Wyszukiwarka kluczy po loginie -->
+            <div class="relative">
+                <input type="text" x-model="searchQuery" placeholder="🔍 Szukaj klucza lub klienta po loginie..."
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:border-brand-500 transition-all">
+            </div>
+
+            <!-- Karty kluczy (Filtrowane w czasie rzeczywistym) -->
             <div class="flex flex-col gap-3">
-                <template x-for="(data, username) in keysList" :key="username">
+                <template x-for="(data, username) in filteredKeys" :key="username">
                     <div class="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 shadow-md">
                         <div class="flex items-center justify-between gap-2 border-b border-slate-800/60 pb-2.5">
                             <div class="flex items-center gap-2 truncate">
@@ -293,7 +358,7 @@ PANEL_HTML = """
                             <button x-show="data.status !== 'Aktywny'" @click="changeStatus(username, 'Aktywny')" class="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded-lg text-[11px] font-medium cursor-pointer">Aktywuj</button>
                             <button x-show="data.status !== 'Wstrzymany'" @click="changeStatus(username, 'Wstrzymany')" class="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded-lg text-[11px] font-medium cursor-pointer">Wstrzymaj</button>
                             <button x-show="data.status !== 'Anulowany'" @click="changeStatus(username, 'Anulowany')" class="px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-lg text-[11px] font-medium cursor-pointer">Anuluj</button>
-                            <template x-if="form.username.toLowerCase() === 'maxikk'">
+                            <template x-if="form.username === 'maxikk'">
                                 <button @click="deleteKey(username)" class="px-2.5 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-[11px] font-bold cursor-pointer">Usuń</button>
                             </template>
                         </div>
@@ -423,11 +488,36 @@ PANEL_HTML = """
                 keysList: {},
                 historyList: [],
                 adminsList: [],
+                announcement: '',
+                ownerAnnouncement: '',
+                searchQuery: '',
                 newKeyForm: { username: '', password: '', key: '', days: 30, notes: '' },
                 showEditModal: false,
                 editForm: { old_username: '', username: '', password: '', key: '', expires_at: '', notes: '' },
                 createMessage: '',
                 createSuccess: false,
+
+                // Automatyczne odświeżanie panelu co 10 sekund
+                init() {
+                    setInterval(() => {
+                        if (this.isLoggedIn && this.userData.role !== 'Klient') {
+                            this.loadData();
+                        }
+                    }, 10000);
+                },
+
+                // Filtrowanie kluczy na żywo po loginie
+                get filteredKeys() {
+                    if (!this.searchQuery) return this.keysList;
+                    let filtered = {};
+                    for (let [username, data] of Object.entries(this.keysList)) {
+                        if (username.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
+                            data.key.toLowerCase().includes(this.searchQuery.toLowerCase())) {
+                            filtered[username] = data;
+                        }
+                    }
+                    return filtered;
+                },
 
                 async login() {
                     this.message = '';
@@ -443,6 +533,7 @@ PANEL_HTML = """
                         if (data.status === 'valid') {
                             this.isLoggedIn = true;
                             this.userData = data;
+                            this.announcement = data.announcement || '';
                             if (data.role !== 'Klient') {
                                 this.loadData();
                             }
@@ -468,8 +559,29 @@ PANEL_HTML = """
                             this.keysList = data.keys;
                             this.historyList = data.history;
                             this.adminsList = data.admins;
+                            this.announcement = data.announcement || '';
+                            this.ownerAnnouncement = data.announcement || '';
                         }
                     } catch(e) {}
+                },
+
+                async saveAnnouncement() {
+                    try {
+                        let res = await fetch('/api/announcement/update', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, message: this.ownerAnnouncement})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.showToast('Komunikat został zaktualizowany!');
+                            this.loadData();
+                        } else {
+                            alert(data.error || 'Błąd zapisu komunikatu.');
+                        }
+                    } catch(e) {
+                        alert('Błąd połączenia.');
+                    }
                 },
 
                 generateKeyString() {
@@ -667,7 +779,7 @@ def serve_panel():
 @app.route("/api/verify", methods=["POST"])
 def verify_license():
   data = request.get_json() or {}
-  login_input = data.get("username", "").strip()
+  login_input = data.get("username", "").strip()  # Dokładne dopasowanie uwzględniające wielkość liter
   password = data.get("password", "").strip()
   input_key = data.get("key", "").strip().upper()
   hwid = data.get("hwid", "").strip()
@@ -675,9 +787,14 @@ def verify_license():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
 
+  # Pobranie aktualnego ogłoszenia
+  cursor.execute("SELECT message FROM announcements WHERE id = 1")
+  ann_row = cursor.fetchone()
+  announcement = ann_row[0] if ann_row else ""
+
+  # Sprawdzenie administratora (dokładny match loginu - case-sensitive)
   cursor.execute(
-      "SELECT username, password_hash, role, package, rank FROM admins WHERE"
-      " username COLLATE NOCASE = ?",
+      "SELECT username, password_hash, role, package, rank FROM admins WHERE username = ?",
       (login_input,),
   )
   admin = cursor.fetchone()
@@ -689,11 +806,17 @@ def verify_license():
     conn.commit()
     conn.close()
     session["user"] = admin[0]
-    return jsonify({"status": "valid", "package": admin[3], "role": admin[2]})
+    return jsonify({
+        "status": "valid",
+        "package": admin[3],
+        "role": admin[2],
+        "announcement": announcement
+    })
 
+  # Sprawdzenie klienta (dokładny match loginu - case-sensitive)
   cursor.execute(
       "SELECT username, password_hash, key, notes, status, created_at,"
-      " expires_at, hwid FROM keys_db WHERE username COLLATE NOCASE = ?",
+      " expires_at, hwid FROM keys_db WHERE username = ?",
       (login_input,),
   )
   client = cursor.fetchone()
@@ -783,6 +906,7 @@ def verify_license():
         "notes": c_notes,
         "expires_at": c_expires,
         "hwid": c_hwid,
+        "announcement": announcement
     })
 
   conn.close()
@@ -790,6 +914,26 @@ def verify_license():
       jsonify({"status": "invalid", "error": "Nieprawidłowy login lub hasło."}),
       200,
   )
+
+
+@app.route("/api/announcement/update", methods=["POST"])
+def update_announcement():
+  data = request.get_json() or {}
+  admin_username = data.get("admin_username", "").strip()
+  new_message = data.get("message", "").strip()
+
+  # Tylko właściciel (dokładnie "maxikk") może zmieniać komunikat
+  if admin_username != "maxikk":
+    return jsonify({"status": "error", "error": "Brak uprawnień właścicielskich."}), 403
+
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute(
+      "UPDATE announcements SET message = ? WHERE id = 1", (new_message,)
+  )
+  conn.commit()
+  conn.close()
+  return jsonify({"status": "success"})
 
 
 @app.route("/api/keys/create", methods=["POST"])
@@ -811,7 +955,7 @@ def create_key():
   cursor = conn.cursor()
 
   cursor.execute(
-      "SELECT username FROM admins WHERE username COLLATE NOCASE = ?",
+      "SELECT username FROM admins WHERE username = ?",
       (username,),
   )
   if cursor.fetchone():
@@ -822,7 +966,7 @@ def create_key():
     )
 
   cursor.execute(
-      "SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?",
+      "SELECT username FROM keys_db WHERE username = ?",
       (username,),
   )
   if cursor.fetchone():
@@ -890,9 +1034,9 @@ def edit_key():
   pwd_hash = generate_password_hash(password) if password else row[0]
   pwd_plain = password if password else row[1]
 
-  if old_username.lower() != new_username.lower():
+  if old_username != new_username:
     cursor.execute(
-        "SELECT username FROM keys_db WHERE username COLLATE NOCASE = ?",
+        "SELECT username FROM keys_db WHERE username = ?",
         (new_username,),
     )
     if cursor.fetchone():
@@ -952,7 +1096,7 @@ def delete_key():
   admin_username = data.get("admin_username")
   username_to_delete = data.get("username")
 
-  if admin_username.lower() != "maxikk":
+  if admin_username != "maxikk":
     return (
         jsonify(
             {"status": "error", "error": "Brak uprawnień właścicielskich."}
@@ -1069,11 +1213,14 @@ def get_admin_data():
   data = request.get_json() or {}
   current_username = data.get("username", "").strip()
 
+  # Automatyczne sprawdzenie wygasłych kluczy przy każdym odświeżeniu/pobieraniu danych w panelu
+  verify_expired_keys()
+
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
 
   cursor.execute(
-      "SELECT rank FROM admins WHERE username COLLATE NOCASE = ?",
+      "SELECT rank FROM admins WHERE username = ?",
       (current_username,),
   )
   res = cursor.fetchone()
@@ -1119,6 +1266,11 @@ def get_admin_data():
       for h in hist_rows
   ]
 
+  # Pobranie aktualnego ogłoszenia
+  cursor.execute("SELECT message FROM announcements WHERE id = 1")
+  ann_row = cursor.fetchone()
+  announcement = ann_row[0] if ann_row else ""
+
   conn.close()
 
   return jsonify({
@@ -1126,6 +1278,7 @@ def get_admin_data():
       "keys": keys_dict,
       "history": history_list,
       "admins": admins_filtered,
+      "announcement": announcement
   })
 
 
