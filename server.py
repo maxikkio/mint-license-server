@@ -257,9 +257,9 @@ PANEL_HTML = """
                 <div class="flex flex-col gap-2.5">
                     <p class="text-xs text-slate-500 italic">Brak aktywnego komunikatu w systemie. Wpisz treść poniżej, aby dodać.</p>
                     <div class="flex gap-2 flex-col sm:flex-row">
-                        <input type="text" x-model="ownerAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
+                        <input type="text" x-model="newAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
                             class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                        <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Dodaj komunikat</button>
+                        <button @click="saveNewAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Dodaj komunikat</button>
                     </div>
                 </div>
             </template>
@@ -286,7 +286,7 @@ PANEL_HTML = """
                             <input type="text" x-model="ownerAnnouncement" placeholder="Edytuj treść ogłoszenia..."
                                 class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                             <div class="flex items-center gap-1.5">
-                                <button @click="saveAnnouncement(); isEditingAnnouncement = false;" class="px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Zapisz</button>
+                                <button @click="saveAnnouncement()" class="px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Zapisz</button>
                                 <button @click="isEditingAnnouncement = false;" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition-all cursor-pointer">Anuluj</button>
                             </div>
                         </div>
@@ -522,6 +522,7 @@ PANEL_HTML = """
                 historyList: [],
                 adminsList: [],
                 announcement: '',
+                newAnnouncement: '',
                 ownerAnnouncement: '',
                 isEditingAnnouncement: false,
                 searchQuery: '',
@@ -592,11 +593,28 @@ PANEL_HTML = """
                             this.historyList = data.history;
                             this.adminsList = data.admins;
                             this.announcement = data.announcement || '';
-                            if (!this.isEditingAnnouncement) {
-                                this.ownerAnnouncement = data.announcement || '';
-                            }
                         }
                     } catch(e) {}
+                },
+
+                async saveNewAnnouncement() {
+                    try {
+                        let res = await fetch('/api/announcement/update', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, message: this.newAnnouncement})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.showToast('Komunikat został dodany!');
+                            this.newAnnouncement = '';
+                            this.loadData();
+                        } else {
+                            alert(data.error || 'Błąd zapisu komunikatu.');
+                        }
+                    } catch(e) {
+                        alert('Błąd połączenia.');
+                    }
                 },
 
                 async saveAnnouncement() {
@@ -623,7 +641,20 @@ PANEL_HTML = """
                     if (!confirm('Czy na pewno chcesz usunąć aktywny komunikat?')) return;
                     this.ownerAnnouncement = '';
                     this.isEditingAnnouncement = false;
-                    await this.saveAnnouncement();
+                    try {
+                        let res = await fetch('/api/announcement/update', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({admin_username: this.form.username, message: ''})
+                        });
+                        let data = await res.json();
+                        if (data.status === 'success') {
+                            this.showToast('Komunikat został usunięty!');
+                            this.loadData();
+                        }
+                    } catch(e) {
+                        alert('Błąd połączenia.');
+                    }
                 },
 
                 generateKeyString() {
