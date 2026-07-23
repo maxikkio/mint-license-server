@@ -640,6 +640,7 @@ PANEL_HTML = """
                 async deleteAnnouncement() {
                     if (!confirm('Czy na pewno chcesz usunąć aktywny komunikat?')) return;
                     this.ownerAnnouncement = '';
+                    this.announcement = ''; // Natychmiastowe wyczyszczenie w stanie lokalnym
                     this.isEditingAnnouncement = false;
                     try {
                         let res = await fetch('/api/announcement/update', {
@@ -651,6 +652,8 @@ PANEL_HTML = """
                         if (data.status === 'success') {
                             this.showToast('Komunikat został usunięty!');
                             this.loadData();
+                        } else {
+                            alert(data.error || 'Błąd usuwania komunikatu.');
                         }
                     } catch(e) {
                         alert('Błąd połączenia.');
