@@ -252,29 +252,47 @@ PANEL_HTML = """
                 <span>👑</span> Strefa Właściciela: Globalny komunikat dla aplikacji
             </h2>
             
-            <!-- Podgląd aktualnie zapisanego komunikatu z opcją Edycji / Usunięcia -->
-            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
-                <span class="text-[10px] font-semibold text-slate-500 uppercase">Aktualnie aktywny komunikat w systemie:</span>
-                <template x-if="announcement">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                        <p class="text-xs text-brand-300 font-medium" x-text="announcement"></p>
+            <!-- Jeśli NIE ma komunikatu: formularz dodawania -->
+            <template x-if="!announcement">
+                <div class="flex flex-col gap-2.5">
+                    <p class="text-xs text-slate-500 italic">Brak aktywnego komunikatu w systemie. Wpisz treść poniżej, aby dodać.</p>
+                    <div class="flex gap-2 flex-col sm:flex-row">
+                        <input type="text" x-model="ownerAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
+                            class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                        <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Dodaj komunikat</button>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Jeśli JEST komunikat -->
+            <template x-if="announcement">
+                <div class="flex flex-col gap-3">
+                    <!-- Tryb wyświetlania -->
+                    <div x-show="!isEditingAnnouncement" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between gap-2 flex-wrap">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-[10px] font-semibold text-slate-500 uppercase">Aktualnie aktywny komunikat:</span>
+                            <p class="text-xs text-brand-300 font-medium" x-text="announcement"></p>
+                        </div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="ownerAnnouncement = announcement" class="px-2.5 py-1 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-400 rounded text-[10px] font-semibold cursor-pointer">Edytuj</button>
+                            <button @click="isEditingAnnouncement = true; ownerAnnouncement = announcement" class="px-2.5 py-1 bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-400 rounded text-[10px] font-semibold cursor-pointer">Edytuj</button>
                             <button @click="deleteAnnouncement()" class="px-2.5 py-1 bg-rose-600/25 hover:bg-rose-600/40 text-rose-400 rounded text-[10px] font-semibold cursor-pointer">Usuń</button>
                         </div>
                     </div>
-                </template>
-                <template x-if="!announcement">
-                    <p class="text-xs text-slate-500 italic">Brak aktywnego komunikatu. Wpisz treść poniżej, aby dodać.</p>
-                </template>
-            </div>
 
-            <!-- Formularz wprowadzania / aktualizacji -->
-            <div class="flex gap-2 flex-col sm:flex-row">
-                <input type="text" x-model="ownerAnnouncement" placeholder="Wpisz treść ogłoszenia, która pojawi się u klientów..."
-                    class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                <button @click="saveAnnouncement()" class="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer" x-text="announcement ? 'Zaktualizuj' : 'Dodaj komunikat'"></button>
-            </div>
+                    <!-- Tryb edycji -->
+                    <div x-show="isEditingAnnouncement" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2.5">
+                        <span class="text-[10px] font-semibold text-indigo-400 uppercase">Edycja komunikatu:</span>
+                        <div class="flex gap-2 flex-col sm:flex-row">
+                            <input type="text" x-model="ownerAnnouncement" placeholder="Edytuj treść ogłoszenia..."
+                                class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                            <div class="flex items-center gap-1.5">
+                                <button @click="saveAnnouncement(); isEditingAnnouncement = false;" class="px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer">Zapisz</button>
+                                <button @click="isEditingAnnouncement = false;" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition-all cursor-pointer">Anuluj</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
         </div>
 
         <!-- STATYSTYKI DASHBOARDU -->
@@ -505,6 +523,7 @@ PANEL_HTML = """
                 adminsList: [],
                 announcement: '',
                 ownerAnnouncement: '',
+                isEditingAnnouncement: false,
                 searchQuery: '',
                 newKeyForm: { username: '', password: '', key: '', days: 30, notes: '' },
                 showEditModal: false,
@@ -573,7 +592,9 @@ PANEL_HTML = """
                             this.historyList = data.history;
                             this.adminsList = data.admins;
                             this.announcement = data.announcement || '';
-                            this.ownerAnnouncement = data.announcement || '';
+                            if (!this.isEditingAnnouncement) {
+                                this.ownerAnnouncement = data.announcement || '';
+                            }
                         }
                     } catch(e) {}
                 },
@@ -588,6 +609,7 @@ PANEL_HTML = """
                         let data = await res.json();
                         if (data.status === 'success') {
                             this.showToast('Komunikat został zaktualizowany!');
+                            this.isEditingAnnouncement = false;
                             this.loadData();
                         } else {
                             alert(data.error || 'Błąd zapisu komunikatu.');
@@ -600,6 +622,7 @@ PANEL_HTML = """
                 async deleteAnnouncement() {
                     if (!confirm('Czy na pewno chcesz usunąć aktywny komunikat?')) return;
                     this.ownerAnnouncement = '';
+                    this.isEditingAnnouncement = false;
                     await this.saveAnnouncement();
                 },
 
